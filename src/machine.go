@@ -361,6 +361,7 @@ func InsertStr(str string, deps ...*Deps) {
 		crdtModel.Nodes[key] = newNode
 		fmt.Println("NewNode: ", newNode)
 		crdtModel.Curr = &newNode
+		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
 		view.str += str
 		outQueue.Enqueue("insert(" + str + ")")
 		return
@@ -379,6 +380,7 @@ func InsertStr(str string, deps ...*Deps) {
 		crdtModel.Nodes[key] = newNode
 		fmt.Println("NewNode: ", newNode)
 		crdtModel.Curr = &newNode
+		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
 		view.str = str + view.str
 		outQueue.Enqueue("insert(" + str + ")")
 		fmt.Println("Outqueue is: ", outQueue)
@@ -402,6 +404,7 @@ func InsertStr(str string, deps ...*Deps) {
 		crdtModel.Nodes[key] = newNode
 		fmt.Println("NewNode: ", newNode)
 		crdtModel.Curr = &newNode
+		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
 		view.str += str
 		outQueue.Enqueue("insert(" + str + ")")
 		fmt.Println("Outqueue is: ", outQueue)
@@ -409,6 +412,27 @@ func InsertStr(str string, deps ...*Deps) {
 	// Case 3: The new node will split the current node
 	if crdtModel.Pos > curr.offset && crdtModel.Pos < curr.offset+len(curr.str) {
 		fmt.Println("middle insert")
+		leftNode := curr
+		rightNode := curr
+		leftNode.r = &newNode   // newNode is now to the immediate right of leftNode
+		rightNode.l = &newNode  // newNode is now to the immediate left of rightNode
+		rightNode.il = leftNode // rightNode and leftNode were inserted at the same time, so they have the same ir il
+		leftNode.ir = rightNode
+
+		fmt.Println("left, right", newNode.l, newNode.r)
+		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
+		fmt.Println("Key is ", key)
+		crdtModel.Nodes[key] = newNode
+		fmt.Println("NewNode: ", newNode)
+		crdtModel.Curr = &newNode
+		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
+
+		// Update view
+		leftBound := crdtModel.Pos
+		// rightBound := crdtModel.Pos + len(newNode.str)
+		view.str = view.str[0:leftBound] + newNode.str + view.str[leftBound:len(view.str)]
+		outQueue.Enqueue("insert(" + str + ")")
+		fmt.Println("Outqueue is: ", outQueue)
 	}
 }
 
