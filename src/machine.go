@@ -141,8 +141,10 @@ func (q *Queue) IsEmpty() bool {
 // ReceiveUpdates is an RPC used for other machines to call to notify this machine of new remote operations
 func (*Machine) ReceiveUpdates(arguments ReceiveUpdatesArgument, reply *ReceiveUpdatesReply) error {
 	// add remote operations received into remoteQueue
+	// fmt.Println("Receiving updates")
 	for _, operation := range arguments.NewOperations {
 		// lock in case of overlap enqueue, order does not matter (commutative)
+		// fmt.Println("Added to remote queue")
 		m.Lock()
 		remoteQueue.Enqueue(operation)
 		m.Unlock()
@@ -156,6 +158,7 @@ func BroadcastUpdates() {
 	// send outQueue operations to other Peers
 	// CHECKOUT: will this handle every single change? even synchronously
 	newOps := []string{} // EDIT: do we send a queue or an array? right now its an array
+	// fmt.Println("Attempting to broadcast updates")
 	for !outQueue.IsEmpty() {
 		fmt.Println("OUTQUEUE NOT EMPTY, OPERATING")
 		m.Lock()
@@ -165,13 +168,18 @@ func BroadcastUpdates() {
 	}
 	for _, peer := range serverPeers {
 		// reach out to every peer in the network and send them the operations in this peer
-		fmt.Println("Sending op out to peers")
+		// fmt.Println("Sending op out to peers")
 		go func(peer ServerConnection) {
 			args := ReceiveUpdatesArgument{
 				NewOperations: newOps,
 			}
 			var reply ReceiveUpdatesReply
-			peer.rpcConnection.Call("Machine.ReceiveUpdates", args, &reply)
+			err := peer.rpcConnection.Call("Machine.ReceiveUpdates", args, &reply)
+			if err != nil {
+				// fmt.Println("Error is: ", err)
+				return
+			}
+			// fmt.Println("Success")
 		}(peer)
 	}
 }
@@ -378,7 +386,6 @@ func InsertStr(str string, deps ...*Deps) {
 		crdtModel.Curr = &newNode
 		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
 		view.str += str
-		outQueue.Enqueue("insert(" + str + ")")
 		return
 	}
 	curr := crdtModel.Curr
@@ -397,7 +404,6 @@ func InsertStr(str string, deps ...*Deps) {
 		crdtModel.Curr = &newNode
 		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
 		view.str = str + view.str
-		outQueue.Enqueue("insert(" + str + ")")
 		fmt.Println("Outqueue is: ", outQueue)
 	}
 	// Case 2: Insert right
@@ -421,14 +427,18 @@ func InsertStr(str string, deps ...*Deps) {
 		crdtModel.Curr = &newNode
 		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
 		view.str += str
-		outQueue.Enqueue("insert(" + str + ")")
 		fmt.Println("Outqueue is: ", outQueue)
 	}
 	// Case 3: The new node will split the current node
 	if crdtModel.Pos > curr.offset && crdtModel.Pos < curr.offset+len(curr.str) {
 		fmt.Println("middle insert")
+		splitStr := curr.str
+		leftStr := splitStr[0 : crdtModel.Pos-curr.offset]
 		leftNode := curr
+		leftNode.str = leftStr
+		rightStr := splitStr[crdtModel.Pos-curr.offset:]
 		rightNode := curr
+		rightNode.str = rightStr
 		leftNode.r = &newNode   // newNode is now to the immediate right of leftNode
 		rightNode.l = &newNode  // newNode is now to the immediate left of rightNode
 		rightNode.il = leftNode // rightNode and leftNode were inserted at the same time, so they have the same ir il
@@ -439,15 +449,15 @@ func InsertStr(str string, deps ...*Deps) {
 		fmt.Println("Key is ", key)
 		crdtModel.Nodes[key] = newNode
 		fmt.Println("NewNode: ", newNode)
-		crdtModel.Curr = &newNode
-		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
 
 		// Update view
 		leftBound := crdtModel.Pos
 		// rightBound := crdtModel.Pos + len(newNode.str)
 		view.str = view.str[0:leftBound] + newNode.str + view.str[leftBound:len(view.str)]
-		outQueue.Enqueue("insert(" + str + ")")
 		fmt.Println("Outqueue is: ", outQueue)
+
+		crdtModel.Curr = &newNode
+		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
 	}
 }
 
@@ -463,31 +473,92 @@ func UndoOperation(op int) {
 // Dequeues operations in the local and remote Queues, and sends broadcast using the outQueue upon new local operations
 func DequeueOperations() {
 	for {
+		insertR := "insert\\(.+\\)"
+		deleteR := "delete\\([0-9]+\\)"
+		undoR := "undo"
+		moveR := "move\\([0-9]+\\)"
+
 		if remoteQueue.IsEmpty() && localQueue.IsEmpty() {
 			continue
 		}
-		newOps := []string{}
-		if !remoteQueue.IsEmpty() {
-			// dequeue the operations once they've been added
-			for !remoteQueue.IsEmpty() {
-				m.Lock()
-				newOps = append(newOps, remoteQueue.Dequeue())
-				m.Unlock()
-			}
-		}
 		if !localQueue.IsEmpty() {
-			m.Lock()
+			fmt.Println("Dequeuing from local queue")
 			localQueueOp := localQueue.Dequeue()
+			fmt.Println("LocalQueueOp", localQueueOp)
+			match, _ := regexp.MatchString(insertR, localQueueOp)
+			if match {
+				fmt.Println("insert")
+				str := localQueueOp[7 : len(localQueueOp)-1]
+				// fmt.Println("str", str)
+				// this can change to be less exclusive inside insertstr
+				InsertStr(str)
+				fmt.Println("Finished inserting string")
+				fmt.Println("View is now: ", view.str)
+				// run insert operation
+			}
+			match, _ = regexp.MatchString(deleteR, localQueueOp)
+			if match {
+				fmt.Println("delete")
+				m.Lock()
+				// DeleteStr(str)
+				m.Unlock()
+				// run delete operation
+			}
+			match, _ = regexp.MatchString(undoR, localQueueOp)
+			if match {
+				fmt.Println("undo")
+				m.Lock()
+				// UndoOperation(str)
+				m.Unlock()
+				// run undo operation
+			}
+			match, _ = regexp.MatchString(moveR, localQueueOp)
+			if match {
+				fmt.Println("move")
+				str := localQueueOp[5 : len(localQueueOp)-1]
+				offset, _ := strconv.Atoi(str)
+				// m.Lock()
+				MoveCursor(offset)
+				fmt.Println("moved cursor")
+				// m.Unlock()
+			}
+			m.Lock()
 			outQueue.Enqueue(localQueueOp)
+			myPun += 1
 			m.Unlock()
-			newOps = append(newOps, localQueueOp)
 		}
 		// broadcast the new operations done locally
-		wg.Add(1)
+		// wg.Add(1)
 		go BroadcastUpdates()
 		// Go through array and try going through operations
 		// TO-DO: depends on the format of the strings in the queues
 	}
+}
+
+func checkWhichOp(op string) int {
+	/* Check what kind of operation it is using regex. */
+	insertR := "insert\\(.+\\)"
+	deleteR := "delete\\([0-9]+\\)"
+	undoR := "undo"
+	moveR := "move\\([0-9]+\\)"
+
+	match, _ := regexp.MatchString(insertR, op)
+	if match {
+		return Insert
+	}
+	match, _ = regexp.MatchString(deleteR, op)
+	if match {
+		return Delete
+	}
+	match, _ = regexp.MatchString(undoR, op)
+	if match {
+		return UndoOp
+	}
+	match, _ = regexp.MatchString(moveR, op)
+	if match {
+		return Move
+	}
+	return -1
 }
 
 func main() {
@@ -566,7 +637,7 @@ func main() {
 	myPid = myID
 	myPun = 0
 	crdtModel.Nodes = make(map[string]Node)
-	wg.Add(1)
+	wg.Add(2)
 	fmt.Println("myPid", myPid)
 	fmt.Println("myPun", myPun)
 	// read console input
@@ -587,66 +658,80 @@ func main() {
 	fmt.Println("To undo your previous command, type the following: undo")
 	fmt.Println("")
 
-	// regex declaration
-	insertR := "insert\\(.+\\)"
-	deleteR := "delete\\([0-9]+\\)"
-	undoR := "undo"
-	moveR := "move\\([0-9]+\\)"
+	// // regex declaration
+	// insertR := "insert\\(.+\\)"
+	// deleteR := "delete\\([0-9]+\\)"
+	// undoR := "undo"
+	// moveR := "move\\([0-9]+\\)"
 
 	// run a thread to always be listening to dequeue operations
 	go DequeueOperations()
 
 	// listen for terminal input
-	for {
-		fmt.Print("-> ")
-		fmt.Println("My PUN is now: ", myPun)
-		text, _ := reader.ReadString('\n')
-		// convert CRLF to LF
-		text = strings.Replace(text, "\n", "", -1)
-		text = strings.ToLower(text[0 : len(text)-1])
-		text = strings.TrimSpace(text)
-		// CHECK: maybe can make this cleaner with switch cases?
-		// check for matches
-		match, _ := regexp.MatchString(insertR, text)
-		if match {
-			fmt.Println("insert")
-			str := text[7 : len(text)-1]
-			fmt.Println("str", str)
-			m.Lock()
-			InsertStr(str)
-			myPun += 1
-			m.Unlock()
-			// run insert operation
+	go func() {
+		for {
+			fmt.Println("My Pos is now: ", crdtModel.Pos)
+			fmt.Println("My PUN is now: ", myPun)
+			fmt.Print("-> ")
+			text, _ := reader.ReadString('\n')
+			// convert CRLF to LF
+			text = strings.Replace(text, "\n", "", -1)
+			text = strings.ToLower(text[0 : len(text)-1])
+			text = strings.TrimSpace(text)
+			// CHECK: maybe can make this cleaner with switch cases?
+			// check for matches
+			switch operation := (checkWhichOp(text)); operation {
+			case Insert:
+				fmt.Println("Insert")
+				localQueue.Enqueue(text)
+			case Delete:
+				fmt.Println("Delete")
+			case Move:
+				fmt.Println("Move")
+				localQueue.Enqueue(text)
+			case UndoOp:
+				fmt.Println("Undo")
+			default:
+				continue
+			}
+			// match, _ := regexp.MatchString(insertR, text)
+			// if match {
+			// 	// fmt.Println("insert")
+			// 	// str := text[7 : len(text)-1]
+			// 	// fmt.Println("str", str)
+			// 	// m.Lock()
+			// 	// InsertStr(str)
+			// 	// myPun += 1
+			// 	// m.Unlock()
+			// 	// run insert operation
+			// 	fmt.Println("text", text)
+			// 	localQueue.Enqueue(text)
+			// }
+			// match, _ = regexp.MatchString(deleteR, text)
+			// if match {
+			// 	// fmt.Println("delete")
+			// 	// DeleteStr(str)
+			// 	// run delete operation
+			// }
+			// match, _ = regexp.MatchString(undoR, text)
+			// if match {
+			// 	// fmt.Println("undo")
+			// 	// UndoOperation(str)
+			// 	// run undo operation
+			// }
+			// match, _ = regexp.MatchString(moveR, text)
+			// if match {
+			// 	// fmt.Println("move")
+			// 	// str := text[5 : len(text)-1]
+			// 	// offset, _ := strconv.Atoi(str)
+			// 	// // m.Lock()
+			// 	// MoveCursor(offset)
+			// 	// fmt.Println("moved cursor")
+			// 	// // m.Unlock()
+			// 	localQueue.Enqueue(text)
+			// }
+			fmt.Println(view.str) // print out the up to date string
 		}
-		match, _ = regexp.MatchString(deleteR, text)
-		if match {
-			fmt.Println("delete")
-			m.Lock()
-			// DeleteStr(str)
-			myPun += 1
-			m.Unlock()
-			// run delete operation
-		}
-		match, _ = regexp.MatchString(undoR, text)
-		if match {
-			fmt.Println("undo")
-			m.Lock()
-			// UndoOperation(str)
-			myPun += 1
-			m.Unlock()
-			// run undo operation
-		}
-		match, _ = regexp.MatchString(moveR, text)
-		if match {
-			fmt.Println("move")
-			str := text[5 : len(text)-1]
-			offset, _ := strconv.Atoi(str)
-			// m.Lock()
-			MoveCursor(offset)
-			fmt.Println("moved cursor")
-			// m.Unlock()
-		}
-		fmt.Println(view.str) // print out the up to date string
-	}
+	}()
 	wg.Wait() // Wait forever or until a node crashes
 }
