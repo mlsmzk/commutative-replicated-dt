@@ -463,6 +463,14 @@ func InsertStr(str string, deps ...*Deps) {
 		rightNode.il = leftNode // rightNode and leftNode were inserted at the same time, so they have the same ir il
 		leftNode.ir = &rightNode
 
+		// Dels replicated to new node
+		for i := 0; i < len(leftNode.dels); i++ {
+			newDel := *leftNode.dels[i]
+			leftNode.dels[i].r = &rightNode
+			newDel.l = leftNode
+			rightNode.dels[i] = &newDel
+		}
+
 		newNode.l = leftNode
 		newNode.r = &rightNode
 
@@ -552,8 +560,17 @@ func DeleteStr(length int) {
 		}
 		currNode.dels = append(currNode.dels, &newDel)
 		leftDel = nil
-		crdtModel.Curr = currNode.r
-		crdtModel.Pos = 0
+		if currNode.r == nil {
+			for node := currNode.l; node != nil; node = node.l {
+				if isNodeVisible(node) {
+					crdtModel.Curr = node
+					crdtModel.Pos = len(node.str)
+				}
+			}
+		} else {
+			crdtModel.Curr = currNode.r
+			crdtModel.Pos = 0
+		}
 	} else if len(currNode.str) < length {
 		var newDel = Del{
 			pid:      myPid,
