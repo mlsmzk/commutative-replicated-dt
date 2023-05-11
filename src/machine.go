@@ -8,6 +8,7 @@ import (
 	"net/rpc"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,6 +60,7 @@ type Depl struct {
 	lpid    int
 	lpun    int
 	loffset int
+	llen    int
 }
 type Depr struct {
 	rpid    int
@@ -164,6 +166,21 @@ func (*Machine) ReceiveUpdates(arguments ReceiveUpdatesArgument, reply *ReceiveU
 	return nil
 }
 
+func ParseForInsert(rawStr string) *Node {
+	var newNode Node
+	var depl Depl
+	var depr Depr
+	_, err := fmt.Sscanf(rawStr, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%s",
+		&newNode.pid, &newNode.pun, &depl.lpid, &depl.lpun, &depl.loffset,
+		&depl.llen, &depr.rpid, &depr.rpun, &depr.roffset, newNode.str)
+	if err != nil {
+		panic(err)
+	}
+	newNode.depl = &depl
+	newNode.depr = &depr
+	return &newNode
+}
+
 // Send Updates to other Peers regarding new local operations
 func BroadcastUpdates() {
 	// send outQueue operations to other Peers
@@ -182,8 +199,6 @@ func BroadcastUpdates() {
 		// fmt.Println("Sending op out to peers")
 		go func(peer ServerConnection) {
 			args := ReceiveUpdatesArgument{
-				//pid: myPid,
-				//pun: myPun,
 				NewOperations: newOps,
 			}
 			var reply ReceiveUpdatesReply
@@ -382,7 +397,72 @@ func ArrayEqual(a, b []int) bool {
 	return true
 }
 
-func InsertStr(str string, deps ...*Deps) {
+func RemoteInsert(newNode *Node) {
+	// Case 0: nothing has been inserted yet
+	if len(crdtModel.Nodes) == 0 { // First node to be inserted
+		fmt.Println("0 insert")
+		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
+		fmt.Println("Key is ", key)
+		crdtModel.Nodes[key] = newNode
+		fmt.Println("NewNode: ", newNode)
+		crdtModel.Curr = newNode
+		crdtModel.Pos = len(newNode.str) // For functionality with move; move back to move forward the right number of spaces
+	} else {
+		var leftNode *Node
+		var rightNode *Node
+		leftDep := *newNode.depl
+		rightDep := *newNode.depr
+		for {
+			leftPos := leftDep.loffset + leftDep.llen
+			rightPos := rightDep.roffset
+			var sameDepNodes []*Node
+			for _, n := range crdtModel.Nodes {
+				if n.depl.loffset+n.depl.llen == leftPos && n.depl.lpid == leftDep.lpid && n.depl.lpun == leftDep.lpun {
+					if n.depr.roffset == rightPos && n.depr.rpid == rightDep.rpid && n.depr.rpun == rightDep.rpun {
+						sameDepNodes = append(sameDepNodes, n)
+					}
+				}
+				if n.pid == newNode.depl.lpid && n.pun == newNode.depl.lpun && n.offset+len(n.str) == leftPos {
+					leftNode = n
+				}
+				if n.pid == newNode.depr.rpid && n.pun == newNode.depr.rpun && n.offset == newNode.depr.roffset {
+					rightNode = n
+				}
+			}
+			if len(sameDepNodes) == 0 {
+				newNode.l = leftNode
+				newNode.r = rightNode
+				leftNode.r = newNode
+				rightNode.l = newNode
+			} else {
+				sameDepNodes = append(sameDepNodes, newNode)
+				sort.SliceStable(sameDepNodes, func(i, j int) bool {
+					return sameDepNodes[i].pid < sameDepNodes[j].pid ||
+						(sameDepNodes[i].pid == sameDepNodes[j].pid && sameDepNodes[i].pun < sameDepNodes[j].pun)
+				})
+				for i := 0; i < len(sameDepNodes); i++ {
+					if sameDepNodes[i] == newNode {
+						if i != 0 {
+							leftDep.lpid = sameDepNodes[i-1].pid
+							leftDep.lpun = sameDepNodes[i-1].pun
+							leftDep.loffset = sameDepNodes[i-1].offset
+							leftDep.llen = len(sameDepNodes[i-1].str)
+						}
+						if i != len(sameDepNodes)-1 {
+							rightDep.rpid = sameDepNodes[i+1].pid
+							rightDep.rpun = sameDepNodes[i+1].pun
+							rightDep.roffset = sameDepNodes[i+1].offset
+						}
+					}
+				}
+			}
+		}
+	}
+	// find the nodes having same dependency
+
+}
+
+func InsertStr(str string) *Node {
 	/* 4 cases: first insert ever, left insert, right insert, or split insert (middle) */
 	var newNode = Node{
 		pid:      myPid,
@@ -399,17 +479,7 @@ func InsertStr(str string, deps ...*Deps) {
 		depl:     nil,
 		depr:     nil,
 	}
-	for _, d := range deps { // Get info from remote node if there are dependencies
-		if d.OpPid != myPid {
-			fmt.Println("PID is not mine, must be remote. Setting new pid, pun, and offset")
-			newNode.pid = d.OpPid
-			newNode.pun = d.OpPun
-			newNode.offset = d.OpOff
-			newNode.depl = d.Left
-			newNode.depr = d.Right
-			fmt.Println("New PPO set, newNode is now: ", newNode)
-		}
-	}
+
 	curr := crdtModel.Curr
 	// Case 0: nothing has been inserted yet
 	if len(crdtModel.Nodes) == 0 { // First node to be inserted
@@ -425,8 +495,21 @@ func InsertStr(str string, deps ...*Deps) {
 		fmt.Println("left insert")
 		newNode.r = curr
 		newNode.l = curr.l
-		if curr.l != nil {
+		if newNode.r != nil {
+			newNode.depr = &Depr{
+				rpid:    newNode.r.pid,
+				rpun:    newNode.r.pun,
+				roffset: newNode.r.offset,
+			}
+		}
+		if newNode.l != nil {
 			curr.l.r = &newNode
+			newNode.depl = &Depl{
+				lpid:    newNode.l.pid,
+				lpun:    newNode.l.pun,
+				loffset: newNode.l.offset,
+				llen:    len(newNode.l.str),
+			}
 		}
 		curr.l = &newNode
 		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
@@ -436,11 +519,23 @@ func InsertStr(str string, deps ...*Deps) {
 	} else if crdtModel.Pos == len(crdtModel.Curr.str) {
 		// Case 2: Insert right
 		fmt.Println("right insert")
-		newNode.l = crdtModel.Curr // set left node to curr,
-		// which will be to this new node's immediate left
-		newNode.r = nil // set right node to right
-		if curr.r != nil {
+		newNode.l = curr   // set left node to curr,
+		newNode.r = curr.r // set right node to right
+		if newNode.l != nil {
+			newNode.depl = &Depl{
+				lpid:    newNode.l.pid,
+				lpun:    newNode.l.pun,
+				loffset: newNode.l.offset,
+				llen:    len(newNode.l.str),
+			}
+		}
+		if newNode.r != nil {
 			curr.r.l = &newNode
+			newNode.depr = &Depr{
+				rpid:    newNode.r.pid,
+				rpun:    newNode.r.pun,
+				roffset: newNode.r.offset,
+			}
 		}
 		curr.r = &newNode // insert on right (FOR NOW!!!!!!!!!!!!)
 		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
@@ -473,7 +568,17 @@ func InsertStr(str string, deps ...*Deps) {
 
 		newNode.l = leftNode
 		newNode.r = &rightNode
-
+		newNode.depl = &Depl{
+			lpid:    newNode.l.pid,
+			lpun:    newNode.l.pun,
+			loffset: newNode.l.offset,
+			llen:    len(newNode.l.str),
+		}
+		newNode.depr = &Depr{
+			rpid:    newNode.r.pid,
+			rpun:    newNode.r.pun,
+			roffset: newNode.r.offset,
+		}
 		fmt.Println("left, right", newNode.l, newNode.r)
 		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
 		fmt.Println("Key is ", key)
@@ -486,6 +591,7 @@ func InsertStr(str string, deps ...*Deps) {
 		crdtModel.Curr = &newNode
 		crdtModel.Pos = len(str) // For functionality with move; move back to move forward the right number of spaces
 	}
+	return &newNode
 }
 
 // odd -> true
@@ -533,8 +639,8 @@ func DeleteStr(length int) {
 			r:      currNode.r,
 			il:     currNode,
 			ir:     currNode.ir,
-			depl:   nil, //currNode
-			depr:   nil, //currNode.depr
+			depl:   currNode.depl, //currNode
+			depr:   currNode.depr, //currNode.depr
 		}
 		currNode.str = currNode.str[:currPos]
 		currNode.r = &newNode
@@ -608,8 +714,8 @@ func DeleteStr(length int) {
 			r:      currNode.r,
 			il:     currNode,
 			ir:     currNode.ir,
-			depl:   nil, //currNode
-			depr:   nil, //currNode.depr
+			depl:   currNode.depl, //currNode
+			depr:   currNode.depr, //currNode.depr
 		}
 		currNode.str = currNode.str[:length]
 		currNode.r = &newNodeR
@@ -703,7 +809,10 @@ func DequeueOperations() {
 					str := localQueueOp[7 : len(localQueueOp)-1]
 					// fmt.Println("str", str)
 					// this can change to be less exclusive inside insertstr
-					InsertStr(str)
+					newNode := InsertStr(str)
+					localQueueOp = fmt.Sprintf("insert%d,%d,%d,%d,%d,%d,%d,%d,%d,%s",
+						newNode.pid, newNode.pun, newNode.depl.lpid, newNode.depl.lpun, newNode.depl.loffset,
+						newNode.depl.llen, newNode.depr.rpid, newNode.depr.rpun, newNode.depr.roffset, str)
 					fmt.Println("Finished inserting string")
 					fmt.Println("View is now: ", view.str)
 					// run insert operation
@@ -726,6 +835,8 @@ func DequeueOperations() {
 					// m.Lock()
 					MoveCursor(offset)
 					fmt.Println("moved cursor")
+					myPun++
+					break
 					// m.Unlock()
 				case UndoOp:
 					fmt.Println("undo")
@@ -749,11 +860,12 @@ func DequeueOperations() {
 				fmt.Println("RemoteQueueOp", remoteQueueOp)
 				switch operation := (checkWhichOp(remoteQueueOp)); operation {
 				case Insert:
-					fmt.Println("insert")
+					fmt.Println("remote insert")
 					str := remoteQueueOp[7 : len(remoteQueueOp)-1]
 					// fmt.Println("str", str)
 					// this can change to be less exclusive inside insertstr
-					InsertStr(str)
+					newNode := ParseForInsert(str)
+					RemoteInsert(newNode)
 					fmt.Println("Finished inserting string")
 					fmt.Println("View is now: ", view.str)
 					// run insert operation
