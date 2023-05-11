@@ -450,16 +450,32 @@ func InsertStr(str string, deps ...*Deps) {
 		fmt.Println("Outqueue is: ", outQueue)
 	}
 }
-func checkUndo(undo *Undo) bool {
-	visible := true
+
+// odd -> true
+func checkOddUndo(undo *Undo) bool {
 	numUndo := 0
 	for ; undo != nil; undo = undo.undo {
 		numUndo++
 	}
 	if numUndo%2 == 1 {
-		visible = false
+		return true
 	}
-	return visible
+	return false
+}
+
+func isNodeVisible(node *Node) bool {
+	if node == nil {
+		return false
+	}
+	if checkOddUndo(node.undo) {
+		return false
+	}
+	for i := 0; i < len(node.dels); i++ {
+		if !checkOddUndo(node.dels[i].undo) {
+			return false
+		}
+	}
+	return true
 }
 
 var leftDel *Node = nil
@@ -530,16 +546,7 @@ func DeleteStr(length int) {
 		node := currNode.r
 		// find next visible node
 		for ; node != nil; node = node.r {
-			if !checkUndo(node.undo) {
-				continue
-			}
-			visible := true
-			for i := 0; i < len(node.dels); i++ {
-				if !checkUndo(node.dels[i].undo) {
-					visible = false
-				}
-			}
-			if visible {
+			if isNodeVisible(node) {
 				break
 			}
 		}
@@ -580,13 +587,40 @@ func DeleteStr(length int) {
 		crdtModel.Curr = currNode.r
 		crdtModel.Pos = 0
 	}
-	myPun++
+	Render()
 }
 
 // Undoes op, which can be insert, delete or undo, and the new current position is placed at op.
 func UndoOperation(op int) {
+	Render()
+}
 
-	myPun++
+func Render() {
+	leftMostNode := crdtModel.Curr
+	if leftMostNode == nil {
+		return
+	}
+	for ; leftMostNode.l != nil; leftMostNode = leftMostNode.l {
+	}
+	newViewStr := ""
+	newViewPos := 0
+	shouldWeAddPos := true
+	for node := leftMostNode; node != nil; node = node.r {
+		if isNodeVisible(node) {
+			newViewStr = newViewStr + node.str
+			if shouldWeAddPos {
+				if node == crdtModel.Curr {
+					shouldWeAddPos = false
+					newViewPos += crdtModel.Pos
+				} else {
+					newViewPos += len(node.str)
+				}
+			}
+		}
+	}
+	view.str = newViewStr
+	view.pos = newViewPos
+	fmt.Println("newViewStr: ", newViewStr)
 }
 
 // Dequeues operations in the local and remote Queues, and sends broadcast using the outQueue upon new local operations
@@ -751,7 +785,8 @@ func main() {
 		if match {
 			fmt.Println("delete")
 			m.Lock()
-			// DeleteStr(str)
+			length, _ := strconv.Atoi(text[7 : len(text)-1])
+			DeleteStr(length)
 			myPun += 1
 			m.Unlock()
 			// run delete operation
