@@ -53,7 +53,7 @@ type Node struct {
 	offset   int
 	str      string
 	dels     []Del
-	undo     Undo // undo of insertion, nil if insertion is not undone
+	undo     bool // undo of insertion, nil if insertion is not undone
 	rendered bool
 	l        *Node
 	r        *Node
@@ -65,12 +65,12 @@ type Node struct {
 
 type View struct {
 	str string // character string visible to the user
-	pos int // current position between two characters
+	pos int    // current position between two characters
 }
 
 type Model struct {
 	Nodes map[string]Node
-	Curr  Node
+	Curr  *Node
 	Pos   int
 }
 
@@ -99,7 +99,6 @@ const (
 	Move
 )
 
-// ToDo: Import Queue
 var localQueue Queue
 var remoteQueue Queue
 var outQueue Queue
@@ -262,41 +261,73 @@ func RecurseThroughNodes(curr Node, pos int, offset int) RecurseThroughNodesRepl
 }
 
 // Inserts string str at the current position and update current position to be at the right end of str.
-func InsertStr(str string, offset int) {
+//
+// type Del struct {
+// 	pid      int
+// 	pun      int
+// 	l        *Node
+// 	r        *Node
+// 	undo     Undo
+// 	rendered bool
+// }
+
+//	type Node struct {
+//		pid      int
+//		pun      int
+//		offset   int
+//		str      string
+//		dels     []Del
+//		undo     Undo // undo of insertion, nil if insertion is not undone
+//		rendered bool
+//		l        *Node
+//		r        *Node
+//		il       *Node
+//		ir       *Node
+//		depl     Depl
+//		depr     Depr
+//	}
+func InsertStr(str string) {
 	var newNode = Node{
-		// pid :
-		// pun :
-		// offset :
-		// str :
-		// dels :
-		undo : nil // undo of insertion, nil if insertion is not undone
-		rendered : false
-		// l        *Node
-		// r        *Node
-		// il       *Node
-		// ir       *Node
-		// depl     Depl
-		// depr     Dep
+		pid :
+		pun :
+		offset :
+		str :
+		dels :
+		undo: false
+		l        *Node
+		r        *Node
+		il       *Node
+		ir       *Node
+		depl     Depl
+		depr     Dep
 	}
 	// Get left and right nodes that are not undone/deleted
-	curr := Model.Curr
+	curr := crdtModel.Curr
 	for curr.undo == nil {
 		curr = curr.l
 	}
 	// left = left node
-	left = curr
-	curr = Model.Curr
+	left := curr
+	newNode.l = left // set left node to left
+	curr = crdtModel.Curr
 	for curr.undo == nil {
 		curr = curr.right
 	}
 	// right = right node
-	right = curr
-
+	right := curr
+	newNode.r = right // set right node to right
+	
+	if []int{left.pid, left.pun, left.offset} == []int{right.pid, right.pun, right.offset} { // Check if they are the same insert op
+		left.ir = right // if yes, link them to each other
+		right.il = left // don't need to worry about ir and il of left because a node can't be split up other than in between two parts of it
+		// i.e. this doesn't matter if the left node is a different insert op than the right node
+	}
 	// Mark the nodes we split by inserting this one
-	Model.Curr.il = Model.Curr.ir
-	Model.Curr.ir = Model.Curr.il
-	// Not sure if this is right OR IF IT NEEDS TO GO HERE ? !? ?!?
-
+	crdtModel.Curr.il = crdtModel.Curr.ir
+	crdtModel.Curr.ir = crdtModel.Curr.il
+	// // Not sure if this is right OR IF IT NEEDS TO GO HERE ? !? ?!?
+	view.str += str
+	outQueue.Enqueue("insert(str)")
 }
 
 // Deletes len characters right to the current position.
@@ -305,7 +336,7 @@ func DeleteStr(len int) {
 
 // Undoes op, which can be insert, delete or undo, and the new current position is placed at op.
 func UndoOperation(op int) {
-	// 
+	//
 }
 
 // Dequeues operations in the local and remote Queues, and sends broadcast using the outQueue upon new local operations
@@ -424,7 +455,7 @@ func main() {
 	fmt.Println("to the left by 2): move({n})")
 	fmt.Println("")
 	fmt.Println("To write a new text, type the following command for your insertion where {a} is the word")
-	fmt.Println("you want to insert at the current position: insert({n}, {a})")
+	fmt.Println("you want to insert at the current position: insert({a})")
 	fmt.Println("")
 	fmt.Println("To delete something, type the following command where {k} is the number of characters")
 	fmt.Println("you want to delete to the right of the current position: delete({k})")
@@ -448,13 +479,15 @@ func main() {
 		// convert CRLF to LF
 		text = strings.Replace(text, "\n", "", -1)
 		text = strings.ToLower(text[0 : len(text)-1])
-		text = strings.ReplaceAll(text, " ", "") // get rid of whitespaces
-
+		text = strings.TrimSpace(text)
 		// CHECK: maybe can make this cleaner with switch cases?
 		// check for matches
 		match, _ := regexp.MatchString(insertR, text)
 		if match {
 			fmt.Println("insert")
+			str := text[7 : len(text)-1]
+			fmt.Println("str", str)
+			InsertStr(str)
 			// run insert operation
 		}
 		match, _ = regexp.MatchString(deleteR, text)
