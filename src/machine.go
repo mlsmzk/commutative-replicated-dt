@@ -679,6 +679,44 @@ func DequeueOperations() {
 			myPun += 1
 			m.Unlock()
 		}
+		if !remoteQueue.IsEmpty() {
+			fmt.Println("Dequeuing from remote queue")
+			remoteQueueOp := remoteQueue.Dequeue()
+			fmt.Println("RemoteQueueOp", remoteQueueOp)
+			switch operation := (checkWhichOp(remoteQueueOp)); operation {
+			case Insert:
+				fmt.Println("insert")
+				str := remoteQueueOp[7 : len(remoteQueueOp)-1]
+				// fmt.Println("str", str)
+				// this can change to be less exclusive inside insertstr
+				InsertStr(str)
+				fmt.Println("Finished inserting string")
+				fmt.Println("View is now: ", view.str)
+				// run insert operation
+			case Delete:
+				fmt.Println("delete")
+				m.Lock()
+				// DeleteStr(str)
+				m.Unlock()
+				// run delete operation
+			case Move:
+				fmt.Println("move")
+				str := remoteQueueOp[5 : len(remoteQueueOp)-1]
+				offset, _ := strconv.Atoi(str)
+				// m.Lock()
+				MoveCursor(offset)
+				fmt.Println("moved cursor")
+				// m.Unlock()
+			case UndoOp:
+				fmt.Println("undo")
+				m.Lock()
+				// UndoOperation(str)
+				m.Unlock()
+				// run undo operation
+			default:
+				continue
+			}
+		}
 		// broadcast the new operations done locally
 		// wg.Add(1)
 		go BroadcastUpdates()
