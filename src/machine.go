@@ -25,7 +25,7 @@ type Del struct {
 	pun      int
 	l        *Node
 	r        *Node
-	undo     Undo
+	undo     *Undo
 	rendered bool
 }
 
@@ -61,7 +61,7 @@ type Node struct {
 	offset   int
 	str      string
 	dels     []*Del
-	undo     bool // undo of insertion, nil if insertion is not undone
+	undo     *Undo // undo of insertion, nil if insertion is not undone
 	rendered bool
 	l        *Node
 	r        *Node
@@ -356,7 +356,7 @@ func InsertStr(str string, deps ...*Deps) {
 		offset:   crdtModel.Pos,
 		str:      str,
 		dels:     nil,
-		undo:     false,
+		undo:     nil,
 		rendered: true,
 		l:        nil,
 		r:        nil,
@@ -461,13 +461,176 @@ func InsertStr(str string, deps ...*Deps) {
 	}
 }
 
+// odd -> true
+func checkOddUndo(undo *Undo) bool {
+	numUndo := 0
+	for ; undo != nil; undo = undo.undo {
+		numUndo++
+	}
+	if numUndo%2 == 1 {
+		return true
+	}
+	return false
+}
+
+func isNodeVisible(node *Node) bool {
+	if node == nil {
+		return false
+	}
+	if checkOddUndo(node.undo) {
+		return false
+	}
+	for i := 0; i < len(node.dels); i++ {
+		if !checkOddUndo(node.dels[i].undo) {
+			return false
+		}
+	}
+	return true
+}
+
+var leftDel *Node = nil
+
 // Deletes len characters right to the current position.
-func DeleteStr(len int) {
+func DeleteStr(length int) {
+	// Assume the cursor is placed only in the node visible
+	// cursor should be moved to the right node after deletion
+	// assert(len > 0)
+	currNode := crdtModel.Curr
+	currPos := crdtModel.Pos
+	if currPos > 0 {
+		var newNode = Node{
+			pid:    currNode.pid,
+			pun:    currNode.pun,
+			offset: currNode.offset + currPos,
+			str:    currNode.str[currPos:],
+			dels:   nil, //
+			undo:   nil,
+			l:      currNode,
+			r:      currNode.r,
+			il:     currNode,
+			ir:     currNode.ir,
+			depl:   nil, //currNode
+			depr:   nil, //currNode.depr
+		}
+		currNode.str = currNode.str[:currPos]
+		currNode.r = &newNode
+		currNode.ir = &newNode
+		currNode.depr = nil //newNode
+		currNode = &newNode
+		currPos = 0
+	}
+	if currNode == nil {
+		return
+	}
+	if len(currNode.str) == length {
+		var newDel = Del{
+			pid:      myPid,
+			pun:      myPun,
+			l:        leftDel,
+			r:        nil,
+			undo:     nil,
+			rendered: false,
+		}
+		if leftDel != nil {
+			leftDel.r = currNode
+		}
+		currNode.dels = append(currNode.dels, &newDel)
+		leftDel = nil
+		crdtModel.Curr = currNode.r
+		crdtModel.Pos = 0
+	} else if len(currNode.str) < length {
+		var newDel = Del{
+			pid:      myPid,
+			pun:      myPun,
+			l:        leftDel,
+			r:        nil,
+			undo:     nil,
+			rendered: false,
+		}
+		if leftDel != nil {
+			leftDel.r = currNode
+		}
+		currNode.dels = append(currNode.dels, &newDel)
+		leftDel = currNode
+
+		node := currNode.r
+		// find next visible node
+		for ; node != nil; node = node.r {
+			if isNodeVisible(node) {
+				break
+			}
+		}
+		crdtModel.Curr = node
+		crdtModel.Pos = 0
+		DeleteStr(length - len(currNode.str))
+	} else {
+		var newNodeR = Node{
+			pid:    currNode.pid,
+			pun:    currNode.pun,
+			offset: currNode.offset + length,
+			str:    currNode.str[length:],
+			dels:   nil, //
+			undo:   nil,
+			l:      currNode,
+			r:      currNode.r,
+			il:     currNode,
+			ir:     currNode.ir,
+			depl:   nil, //currNode
+			depr:   nil, //currNode.depr
+		}
+		currNode.str = currNode.str[:length]
+		currNode.r = &newNodeR
+		currNode.ir = &newNodeR
+		currNode.depr = nil //newNode
+		//currNode = &newNode
+		//currPos = 0
+		var newDel = Del{
+			pid:      myPid,
+			pun:      myPun,
+			l:        leftDel,
+			r:        nil,
+			undo:     nil,
+			rendered: false,
+		}
+		currNode.dels = append(currNode.dels, &newDel)
+		leftDel = nil
+		crdtModel.Curr = currNode.r
+		crdtModel.Pos = 0
+	}
+	Render()
 }
 
 // Undoes op, which can be insert, delete or undo, and the new current position is placed at op.
 func UndoOperation(op int) {
-	//
+	Render()
+}
+
+func Render() {
+	leftMostNode := crdtModel.Curr
+	if leftMostNode == nil {
+		return
+	}
+	for ; leftMostNode.l != nil; leftMostNode = leftMostNode.l {
+	}
+	newViewStr := ""
+	newViewPos := 0
+	shouldWeAddPos := true
+	for node := leftMostNode; node != nil; node = node.r {
+		if isNodeVisible(node) {
+			newViewStr = newViewStr + node.str
+			if shouldWeAddPos {
+				if node == crdtModel.Curr {
+					shouldWeAddPos = false
+					newViewPos += crdtModel.Pos
+				} else {
+					newViewPos += len(node.str)
+				}
+			}
+		}
+	}
+	view.str = newViewStr
+	view.pos = newViewPos
+	fmt.Println("newViewStr: ", newViewStr)
 }
 
 // Dequeues operations in the local and remote Queues, and sends broadcast using the outQueue upon new local operations
@@ -700,7 +863,8 @@ func main() {
 			// 	// str := text[7 : len(text)-1]
 			// 	// fmt.Println("str", str)
 			// 	// m.Lock()
-			// 	// InsertStr(str)
+			// length, _ := strconv.Atoi(text[7 : len(text)-1])
+			// InsertStr(length)
 			// 	// myPun += 1
 			// 	// m.Unlock()
 			// 	// run insert operation
