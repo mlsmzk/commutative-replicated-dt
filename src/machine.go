@@ -229,6 +229,7 @@ func RecurseThroughNodes(curr *Node, pos int, offset int, numInvs int) RecurseTh
 	fmt.Println("node is", curr)
 	currNodeLen := len(curr.str)
 	fmt.Println("length of node", currNodeLen)
+	fmt.Println("pos and offset are:", pos, offset)
 	reply := RecurseThroughNodesReply{
 		node:    curr,
 		posNode: pos,
@@ -266,28 +267,18 @@ func RecurseThroughNodes(curr *Node, pos int, offset int, numInvs int) RecurseTh
 				}
 				reply = RecurseThroughNodes(finalNode, len(finalNode.str), 0, 0)
 			} else {
-				reply = RecurseThroughNodes(curr.r, len(curr.l.str), offset, numInvs+1)
+				reply = RecurseThroughNodes(curr.r, 0, offset, numInvs+1)
 			}
 		}
 	} else {
-		fmt.Println("sum value is", pos+offset)
-		if pos+offset >= 0 && pos+offset <= currNodeLen {
-			fmt.Println("within the string")
-			pos = pos + offset
-			fmt.Println("new pos:", pos)
-			reply = RecurseThroughNodes(curr, pos, 0, numInvs)
-		} else {
-			offset = offset + pos
-			if offset < 0 {
-				if curr.l == nil {
-					// if there are no more left nodes
-					reply = RecurseThroughNodes(curr, 0, 0, numInvs)
-				} else {
-					// if there are more left nodes
-					reply = RecurseThroughNodes(curr.l, len(curr.l.str), offset, numInvs)
-				}
+		if offset > 0 {
+			// move to the right
+			if offset <= (currNodeLen - pos) {
+				pos = pos + offset
+				fmt.Println("within the string")
+				reply = RecurseThroughNodes(curr, pos, 0, numInvs)
 			} else {
-				// has to be greater than the length of the current node - pos+offset == 0 is accounted for earlier
+				offset = offset - (currNodeLen - pos)
 				if curr.r == nil {
 					// if there are no more right nodes
 					reply = RecurseThroughNodes(curr, currNodeLen, 0, numInvs)
@@ -296,42 +287,25 @@ func RecurseThroughNodes(curr *Node, pos int, offset int, numInvs int) RecurseTh
 					reply = RecurseThroughNodes(curr.r, 0, offset, numInvs)
 				}
 			}
+		} else {
+			// if offset < 0 - move to the left
+			if pos+offset >= 0 {
+				fmt.Println("within the string")
+				pos = pos + offset
+				reply = RecurseThroughNodes(curr, pos, 0, numInvs)
+			} else {
+				offset = offset + pos
+				if curr.l == nil {
+					// if there are no more left nodes
+					reply = RecurseThroughNodes(curr, 0, 0, numInvs)
+				} else {
+					// if there are more left nodes
+					fmt.Println("there is a left node")
+					reply = RecurseThroughNodes(curr.l, len(curr.l.str), offset, numInvs)
+				}
+			}
 		}
 	}
-	// else if offset < 0{
-	// 	// keep going to the left
-	// 	if pos + offset >= 0{
-	// 		// can stop at this node
-	// 		pos = pos + offset
-	// 		RecurseThroughNodes(curr, pos, 0) // can stop recursing
-	// 	} else {
-	// 		// need to continue to the next node
-	// 		offset = offset + pos
-	// 		if curr.l == nil {
-	// 			// if there are no more left nodes
-	// 			RecurseThroughNodes(curr, 0, 0)
-	// 		} else {
-	// 			// if there are more left nodes
-	// 			RecurseThroughNodes(curr.l, len(curr.l.str), offset)
-	// 		}
-	// 	}
-	// } else {
-	// 	// keep going to the right
-	// 	if pos + offset <= currNodeLen {
-	// 		// can stop at this node
-	// 		pos = pos + offset
-	// 		RecurseThroughNodes(curr, pos, 0) // can stop recursing
-	// 	} else {
-	// 		// need to continue to the next node
-	// 		offset = offset + pos
-	// 		if curr.r == nil {
-	// 			// if there are no more right nodes
-	// 			RecurseThroughNodes(curr, currNodeLen, 0)
-	// 		} else {
-	// 			RecurseThroughNodes(curr.r, 0, offset)
-	// 		}
-	// 	}
-	// }
 	return reply
 }
 
@@ -598,8 +572,9 @@ func DeleteStr(length int) {
 }
 
 // Undoes op, which can be insert, delete or undo, and the new current position is placed at op.
-func UndoOperation(op int) {
+func UndoOperation() {
 	Render()
+	fmt.Println("undo finisheed")
 }
 
 func Render() {
@@ -639,89 +614,104 @@ func DequeueOperations() {
 		}
 		if !localQueue.IsEmpty() {
 			fmt.Println("Dequeuing from local queue")
-			localQueueOp := localQueue.Dequeue()
-			fmt.Println("LocalQueueOp", localQueueOp)
-			switch operation := (checkWhichOp(localQueueOp)); operation {
-			case Insert:
-				fmt.Println("insert")
-				str := localQueueOp[7 : len(localQueueOp)-1]
-				// fmt.Println("str", str)
-				// this can change to be less exclusive inside insertstr
-				InsertStr(str)
-				fmt.Println("Finished inserting string")
-				fmt.Println("View is now: ", view.str)
-				// run insert operation
-			case Delete:
-				fmt.Println("delete")
+			for !localQueue.IsEmpty() {
+				localQueueOp := localQueue.Dequeue()
+				fmt.Println("LocalQueueOp", localQueueOp)
+				switch operation := (checkWhichOp(localQueueOp)); operation {
+				case Insert:
+					fmt.Println("insert")
+					str := localQueueOp[7 : len(localQueueOp)-1]
+					// fmt.Println("str", str)
+					// this can change to be less exclusive inside insertstr
+					InsertStr(str)
+					fmt.Println("Finished inserting string")
+					fmt.Println("View is now: ", view.str)
+					// run insert operation
+				case Delete:
+					fmt.Println("delete")
+					str := localQueueOp[7 : len(localQueueOp)-1]
+					offset, err := strconv.Atoi(str)
+					if err != nil {
+						fmt.Println("input to delete is invalid")
+						continue
+					}
+					m.Lock()
+					DeleteStr(offset)
+					m.Unlock()
+					// run delete operation
+				case Move:
+					fmt.Println("move")
+					str := localQueueOp[5 : len(localQueueOp)-1]
+					offset, _ := strconv.Atoi(str)
+					// m.Lock()
+					MoveCursor(offset)
+					fmt.Println("moved cursor")
+					// m.Unlock()
+				case UndoOp:
+					fmt.Println("undo")
+					m.Lock()
+					UndoOperation()
+					m.Unlock()
+					// run undo operation
+				default:
+					continue
+				}
 				m.Lock()
-				// DeleteStr(str)
+				outQueue.Enqueue(localQueueOp)
+				myPun += 1
 				m.Unlock()
-				// run delete operation
-			case Move:
-				fmt.Println("move")
-				str := localQueueOp[5 : len(localQueueOp)-1]
-				offset, _ := strconv.Atoi(str)
-				// m.Lock()
-				MoveCursor(offset)
-				fmt.Println("moved cursor")
-				// m.Unlock()
-			case UndoOp:
-				fmt.Println("undo")
-				m.Lock()
-				// UndoOperation(str)
-				m.Unlock()
-				// run undo operation
-			default:
-				continue
 			}
-			m.Lock()
-			outQueue.Enqueue(localQueueOp)
-			myPun += 1
-			m.Unlock()
 		}
 		if !remoteQueue.IsEmpty() {
 			fmt.Println("Dequeuing from remote queue")
-			remoteQueueOp := remoteQueue.Dequeue()
-			fmt.Println("RemoteQueueOp", remoteQueueOp)
-			switch operation := (checkWhichOp(remoteQueueOp)); operation {
-			case Insert:
-				fmt.Println("insert")
-				str := remoteQueueOp[7 : len(remoteQueueOp)-1]
-				// fmt.Println("str", str)
-				// this can change to be less exclusive inside insertstr
-				InsertStr(str)
-				fmt.Println("Finished inserting string")
-				fmt.Println("View is now: ", view.str)
-				// run insert operation
-			case Delete:
-				fmt.Println("delete")
-				m.Lock()
-				// DeleteStr(str)
-				m.Unlock()
-				// run delete operation
-			case Move:
-				fmt.Println("move")
-				str := remoteQueueOp[5 : len(remoteQueueOp)-1]
-				offset, _ := strconv.Atoi(str)
-				// m.Lock()
-				MoveCursor(offset)
-				fmt.Println("moved cursor")
-				// m.Unlock()
-			case UndoOp:
-				fmt.Println("undo")
-				m.Lock()
-				// UndoOperation(str)
-				m.Unlock()
-				// run undo operation
-			default:
-				continue
+			for !remoteQueue.IsEmpty() {
+				remoteQueueOp := remoteQueue.Dequeue()
+				fmt.Println("RemoteQueueOp", remoteQueueOp)
+				switch operation := (checkWhichOp(remoteQueueOp)); operation {
+				case Insert:
+					fmt.Println("insert")
+					str := remoteQueueOp[7 : len(remoteQueueOp)-1]
+					// fmt.Println("str", str)
+					// this can change to be less exclusive inside insertstr
+					InsertStr(str)
+					fmt.Println("Finished inserting string")
+					fmt.Println("View is now: ", view.str)
+					// run insert operation
+				case Delete:
+					fmt.Println("delete")
+					str := remoteQueueOp[7 : len(remoteQueueOp)-1]
+					offset, err := strconv.Atoi(str)
+					if err != nil {
+						fmt.Println("input to delete is invalid")
+						continue
+					}
+					m.Lock()
+					DeleteStr(offset)
+					m.Unlock()
+					// run delete operation
+				case Move:
+					fmt.Println("move")
+					str := remoteQueueOp[5 : len(remoteQueueOp)-1]
+					offset, _ := strconv.Atoi(str)
+					// m.Lock()
+					MoveCursor(offset)
+					fmt.Println("moved cursor")
+					// m.Unlock()
+				case UndoOp:
+					fmt.Println("undo")
+					m.Lock()
+					UndoOperation() // input does not matter
+					m.Unlock()
+					// run undo operation
+				default:
+					continue
+				}
 			}
 		}
 		// broadcast the new operations done locally
 		// wg.Add(1)
 		go BroadcastUpdates()
 		// Go through array and try going through operations
-		// TO-DO: depends on the format of the strings in the queues
 	}
 }
 
@@ -730,7 +720,7 @@ func checkWhichOp(op string) int {
 	insertR := "insert\\(.+\\)"
 	deleteR := "delete\\([0-9]+\\)"
 	undoR := "undo"
-	moveR := "move\\([0-9]+\\)"
+	moveR := "move\\(-?[0-9]+\\)"
 
 	match, _ := regexp.MatchString(insertR, op)
 	if match {
@@ -870,11 +860,13 @@ func main() {
 				localQueue.Enqueue(text)
 			case Delete:
 				fmt.Println("Delete")
+				localQueue.Enqueue(text)
 			case Move:
 				fmt.Println("Move")
 				localQueue.Enqueue(text)
 			case UndoOp:
 				fmt.Println("Undo")
+				localQueue.Enqueue(text)
 			default:
 				continue
 			}
