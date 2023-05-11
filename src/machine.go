@@ -169,6 +169,98 @@ func BroadcastUpdates() {
 // Moves the current position |offset| characters.
 // if offset > 0, current position moved to the right. And vice versa to the left
 func MoveCursor(offset int) {
+	// Update the Curr Node and Pos of the model
+	// Update the position of the View
+	curr := crdtModel.Curr
+	currPos := crdtModel.Pos
+	if offset > 0 {
+		if view.pos + offset > len(view.str){
+			// check if the curr will move past the end of the string in view=
+			view.pos = len(view.str)
+		}
+		
+	} else if offset < 0 {
+		if view.pos + offset < len(view.str){
+			// check if the curr will move past the beginning of the string in view
+			view.pos = 0
+		}
+	}
+}
+
+type RecurseThroughNodesReply struct {
+	node Node
+	posNode int
+}
+
+// TO-DO: handle invisible nodes
+func RecurseThroughNodes(curr Node, pos int, offset int) RecurseThroughNodesReply {
+	currNodeLen := len(curr.str)
+	reply := RecurseThroughNodesReply{
+		node: curr,
+		pos: pos,
+	}
+	if offset == 0{
+		// if no more need to recurse through nodes
+		return reply
+	} 
+	// EDIT: if the above works, substitutee with below code
+	if pos + offset >= 0 || pos + offset <= currNodeLen {
+		pos = pos + offset
+		RecurseThroughNodes(curr,pos,0)
+	} else {
+		offset = offset + pos
+		if offset < 0 {
+			if curr.l == nil {
+				// if there are no more left nodes
+				RecurseThroughNodes(curr, 0, 0)
+			} else {
+				// if there are more left nodes
+				RecurseThroughNodes(curr.l, len(curr.l.str), offset)
+			}
+		} else {
+			// has to be greater than the length of the current node - pos+offset == 0 is accounted for earlier
+			if curr.r == nil {
+				// if there are no more right nodes
+				RecurseThroughNodes(curr, currNodeLen, 0)
+			} else {
+				RecurseThroughNodes(curr.r, 0, offset)
+			}
+		}
+	}
+	// else if offset < 0{
+	// 	// keep going to the left
+	// 	if pos + offset >= 0{
+	// 		// can stop at this node
+	// 		pos = pos + offset
+	// 		RecurseThroughNodes(curr, pos, 0) // can stop recursing
+	// 	} else {
+	// 		// need to continue to the next node
+	// 		offset = offset + pos
+	// 		if curr.l == nil {
+	// 			// if there are no more left nodes
+	// 			RecurseThroughNodes(curr, 0, 0)
+	// 		} else {
+	// 			// if there are more left nodes
+	// 			RecurseThroughNodes(curr.l, len(curr.l.str), offset)
+	// 		}
+	// 	}
+	// } else {
+	// 	// keep going to the right
+	// 	if pos + offset <= currNodeLen {
+	// 		// can stop at this node
+	// 		pos = pos + offset
+	// 		RecurseThroughNodes(curr, pos, 0) // can stop recursing
+	// 	} else {
+	// 		// need to continue to the next node
+	// 		offset = offset + pos
+	// 		if curr.r == nil {
+	// 			// if there are no more right nodes
+	// 			RecurseThroughNodes(curr, currNodeLen, 0)
+	// 		} else {
+	// 			RecurseThroughNodes(curr.r, 0, offset)
+	// 		}
+	// 	}
+	// }
 }
 
 // Inserts string str at the current position and update current position to be at the right end of str.
@@ -386,11 +478,13 @@ func main() {
 	fmt.Println("you want to delete to the right of the current position: delete({k})")
 	fmt.Println("")
 	fmt.Println("To undo your previous command, type the following: undo")
+	fmt.Println("")
 
 	// regex declaration
 	insertR := "insert\\(.+\\)"
-	deleteR := "delete\\([0-9]+,[0-9]+\\)"
+	deleteR := "delete\\([0-9]+\\)"
 	undoR := "undo"
+	moveR := "move\\([0-9]+\\)"
 
 	// run a thread to always be listening to dequeue operations
 	go DequeueOperations()
@@ -425,6 +519,5 @@ func main() {
 		}
 		fmt.Println(view.str) // print out the up to date string
 	}
-
 	wg.Wait() // Wait forever or until a node crashes
 }
