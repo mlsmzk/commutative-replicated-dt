@@ -383,27 +383,26 @@ func DequeueOperations() {
 		if remoteQueue.IsEmpty() && localQueue.IsEmpty() {
 			continue
 		}
-		newOps := []string{}
+
 		if !remoteQueue.IsEmpty() {
-			// dequeue the operations once they've been added
+			// dequeue the operations and run them
 			for !remoteQueue.IsEmpty() {
 				m.Lock()
-				newOps = append(newOps, remoteQueue.Dequeue())
+				operation := remoteQueue.Dequeue()
 				m.Unlock()
+				// TODO: run the operation with go _____()
 			}
 		}
 		if !localQueue.IsEmpty() {
+			// local operations should be done on machine already
 			m.Lock()
 			localQueueOp := localQueue.Dequeue()
 			outQueue.Enqueue(localQueueOp)
 			m.Unlock()
-			newOps = append(newOps, localQueueOp)
 		}
 		// broadcast the new operations done locally
 		wg.Add(1)
-		go BroadcastUpdates()
-		// Go through array and try going through operations
-		// TO-DO: depends on the format of the strings in the queues
+		go BroadcastUpdates() // sends the local operations to all other peers
 	}
 }
 
