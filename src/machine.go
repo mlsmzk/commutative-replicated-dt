@@ -177,7 +177,7 @@ func BroadcastUpdates() {
 }
 
 type RecurseThroughNodesReply struct {
-	node    Node
+	node    *Node
 	posNode int
 }
 
@@ -208,15 +208,16 @@ func MoveCursor(offset int) {
 		}
 	}
 	reply := RecurseThroughNodes(curr, currPos, offset, 0)
-	crdtModel.Curr = &reply.node
+	crdtModel.Curr = reply.node
 	crdtModel.Pos = reply.posNode
+	fmt.Println("hi im here :", reply)
 }
 
-func RecurseThroughNodes(curr Node, pos int, offset int, numInvs int) RecurseThroughNodesReply {
+func RecurseThroughNodes(curr *Node, pos int, offset int, numInvs int) RecurseThroughNodesReply {
 	currNodeLen := len(curr.str)
 	reply := RecurseThroughNodesReply{
-		node: curr,
-		pos:  pos,
+		node:    curr,
+		posNode: pos,
 	}
 	if offset == 0 {
 		// if no more need to recurse through nodes
@@ -228,9 +229,9 @@ func RecurseThroughNodes(curr Node, pos int, offset int, numInvs int) RecurseThr
 			// wants to move to the left
 			if curr.l == nil {
 				// if there are no more left nodes, go to the previous non-invisible node
-				var finalNode Node
+				var finalNode *Node
 				for numInvs > 0 {
-					finalNode = *curr.r
+					finalNode = curr.r
 					numInvs = numInvs - 1
 				}
 				RecurseThroughNodes(finalNode, 0, 0, 0)
@@ -241,9 +242,9 @@ func RecurseThroughNodes(curr Node, pos int, offset int, numInvs int) RecurseThr
 			// wants to move to the right
 			if curr.r == nil {
 				// if there are no more right nodes, go to the previous non-invisible node
-				var finalNode Node
+				var finalNode *Node
 				for numInvs > 0 {
-					finalNode = *curr.l
+					finalNode = curr.l
 					numInvs = numInvs - 1
 				}
 				RecurseThroughNodes(finalNode, len(finalNode.str), 0, 0)
@@ -254,13 +255,13 @@ func RecurseThroughNodes(curr Node, pos int, offset int, numInvs int) RecurseThr
 	}
 	if pos+offset >= 0 || pos+offset <= currNodeLen {
 		pos = pos + offset
-		RecurseThroughNodes(curr, pos, 0)
+		RecurseThroughNodes(curr, pos, 0, numInvs)
 	} else {
 		offset = offset + pos
 		if offset < 0 {
 			if curr.l == nil {
 				// if there are no more left nodes
-				RecurseThroughNodes(curr, 0, 0)
+				RecurseThroughNodes(curr, 0, 0, numInvs)
 			} else {
 				// if there are more left nodes
 				RecurseThroughNodes(curr.l, len(curr.l.str), offset, numInvs)
@@ -309,6 +310,7 @@ func RecurseThroughNodes(curr Node, pos int, offset int, numInvs int) RecurseThr
 	// 		}
 	// 	}
 	// }
+	return reply
 }
 
 // Inserts string str at the current position and update current position to be at the right end of str.
@@ -550,7 +552,7 @@ func main() {
 	insertR := "insert\\(.+\\)"
 	deleteR := "delete\\([0-9]+\\)"
 	undoR := "undo"
-	// moveR := "move\\([0-9]+\\)"
+	moveR := "move\\([0-9]+\\)"
 
 	// run a thread to always be listening to dequeue operations
 	go DequeueOperations()
@@ -594,6 +596,14 @@ func main() {
 			myPun += 1
 			m.Unlock()
 			// run undo operation
+		}
+		match, _ = regexp.MatchString(moveR, text)
+		if match {
+			fmt.Println("move")
+			offset, _ := strconv.Atoi(text)
+			m.Lock()
+			MoveCursor(offset)
+			m.Unlock()
 		}
 		fmt.Println(view.str) // print out the up to date string
 	}
