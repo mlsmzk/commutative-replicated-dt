@@ -186,6 +186,7 @@ type RecurseThroughNodesReply struct {
 func MoveCursor(offset int) {
 	// Update the Curr Node and Pos of the model
 	// Update the position of the View
+	fmt.Println("offset is", offset)
 	if offset == 0 {
 		return
 	}
@@ -207,19 +208,26 @@ func MoveCursor(offset int) {
 			view.pos = view.pos + offset
 		}
 	}
+	fmt.Println("new post in view:", view.pos)
 	reply := RecurseThroughNodes(curr, currPos, offset, 0)
 	crdtModel.Curr = reply.node
 	crdtModel.Pos = reply.posNode
-	fmt.Println("hi im here :", reply)
+	fmt.Println("hi im here :", reply.node)
+	fmt.Println("at this position:", reply.posNode)
 }
 
 func RecurseThroughNodes(curr *Node, pos int, offset int, numInvs int) RecurseThroughNodesReply {
+	fmt.Println("current str is:", curr.str)
+	fmt.Println("node is", curr)
 	currNodeLen := len(curr.str)
+	fmt.Println("length of node", currNodeLen)
 	reply := RecurseThroughNodesReply{
 		node:    curr,
 		posNode: pos,
 	}
 	if offset == 0 {
+		fmt.Println("final pos:", pos)
+		fmt.Println("final str:", curr.str)
 		// if no more need to recurse through nodes
 		return reply
 	}
@@ -234,45 +242,51 @@ func RecurseThroughNodes(curr *Node, pos int, offset int, numInvs int) RecurseTh
 					finalNode = curr.r
 					numInvs = numInvs - 1
 				}
-				RecurseThroughNodes(finalNode, 0, 0, 0)
+				reply = RecurseThroughNodes(finalNode, 0, 0, 0)
 			} else {
-				RecurseThroughNodes(curr.l, len(curr.l.str), offset, numInvs+1)
+				reply = RecurseThroughNodes(curr.l, len(curr.l.str), offset, numInvs+1)
 			}
 		} else {
 			// wants to move to the right
 			if curr.r == nil {
+				fmt.Println("right node is empty")
 				// if there are no more right nodes, go to the previous non-invisible node
 				var finalNode *Node
 				for numInvs > 0 {
 					finalNode = curr.l
 					numInvs = numInvs - 1
 				}
-				RecurseThroughNodes(finalNode, len(finalNode.str), 0, 0)
+				reply = RecurseThroughNodes(finalNode, len(finalNode.str), 0, 0)
 			} else {
-				RecurseThroughNodes(curr.r, len(curr.l.str), offset, numInvs+1)
+				reply = RecurseThroughNodes(curr.r, len(curr.l.str), offset, numInvs+1)
 			}
 		}
-	}
-	if pos+offset >= 0 || pos+offset <= currNodeLen {
-		pos = pos + offset
-		RecurseThroughNodes(curr, pos, 0, numInvs)
 	} else {
-		offset = offset + pos
-		if offset < 0 {
-			if curr.l == nil {
-				// if there are no more left nodes
-				RecurseThroughNodes(curr, 0, 0, numInvs)
-			} else {
-				// if there are more left nodes
-				RecurseThroughNodes(curr.l, len(curr.l.str), offset, numInvs)
-			}
+		fmt.Println("sum value is", pos+offset)
+		if pos+offset >= 0 && pos+offset <= currNodeLen {
+			fmt.Println("within the string")
+			pos = pos + offset
+			fmt.Println("new pos:", pos)
+			reply = RecurseThroughNodes(curr, pos, 0, numInvs)
 		} else {
-			// has to be greater than the length of the current node - pos+offset == 0 is accounted for earlier
-			if curr.r == nil {
-				// if there are no more right nodes
-				RecurseThroughNodes(curr, currNodeLen, 0, numInvs)
+			offset = offset + pos
+			if offset < 0 {
+				if curr.l == nil {
+					// if there are no more left nodes
+					reply = RecurseThroughNodes(curr, 0, 0, numInvs)
+				} else {
+					// if there are more left nodes
+					reply = RecurseThroughNodes(curr.l, len(curr.l.str), offset, numInvs)
+				}
 			} else {
-				RecurseThroughNodes(curr.r, 0, offset, numInvs)
+				// has to be greater than the length of the current node - pos+offset == 0 is accounted for earlier
+				if curr.r == nil {
+					// if there are no more right nodes
+					reply = RecurseThroughNodes(curr, currNodeLen, 0, numInvs)
+				} else {
+					fmt.Println("there is a right node")
+					reply = RecurseThroughNodes(curr.r, 0, offset, numInvs)
+				}
 			}
 		}
 	}
@@ -329,18 +343,19 @@ func ArrayEqual(a, b []int) bool {
 func InsertStr(str string, deps ...*Deps) {
 	/* 4 cases: first insert ever, left insert, right insert, or split insert (middle) */
 	var newNode = Node{
-		pid:    myPid,
-		pun:    myPun,
-		offset: crdtModel.Pos,
-		str:    str,
-		dels:   nil,
-		undo:   false,
-		l:      nil,
-		r:      nil,
-		il:     nil,
-		ir:     nil,
-		depl:   nil,
-		depr:   nil,
+		pid:      myPid,
+		pun:      myPun,
+		offset:   crdtModel.Pos,
+		str:      str,
+		dels:     nil,
+		undo:     false,
+		rendered: true,
+		l:        nil,
+		r:        nil,
+		il:       nil,
+		ir:       nil,
+		depl:     nil,
+		depr:     nil,
 	}
 	for _, d := range deps { // Get info from remote node if there are dependencies
 		if d.OpPid != myPid {
@@ -624,10 +639,12 @@ func main() {
 		match, _ = regexp.MatchString(moveR, text)
 		if match {
 			fmt.Println("move")
-			offset, _ := strconv.Atoi(text)
-			m.Lock()
+			str := text[5 : len(text)-1]
+			offset, _ := strconv.Atoi(str)
+			// m.Lock()
 			MoveCursor(offset)
-			m.Unlock()
+			fmt.Println("moved cursor")
+			// m.Unlock()
 		}
 		fmt.Println(view.str) // print out the up to date string
 	}
