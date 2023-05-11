@@ -13,6 +13,18 @@ import (
 	"sync"
 )
 
+type OperationMapID struct {
+	opNum int
+	opIdx int
+}
+
+var pun2op map[int] OperationMapID
+
+var insertMap 	map[int] *Node
+var deleteMap 	map[int] *Del
+var undoMap		map[int] *Undo
+
+
 type Machine int
 
 type OperationID struct {
@@ -591,7 +603,26 @@ func DeleteStr(length int) {
 }
 
 // Undoes op, which can be insert, delete or undo, and the new current position is placed at op.
-func UndoOperation(op int) {
+func UndoOperation(pun int) {
+	newUndo := Undo{
+		pid: myPid,
+		pun: myPun,
+	}
+	opMapID := pun2op(pun)
+	switch opMapID.opNum {
+	case 0:
+		insertMap[opMapID.opIdx]
+	case 1:
+	case 2:	
+
+	}
+	
+	
+
+	var insertMap 	map[int] *Node
+	var deleteMap 	map[int] *Del
+	var undoMap		map[int] *Undo
+	Model.Nodes[]
 	Render()
 }
 
@@ -795,7 +826,7 @@ func main() {
 		if match {
 			fmt.Println("undo")
 			m.Lock()
-			// UndoOperation(str)
+			UndoOperation(myPun-1)
 			myPun += 1
 			m.Unlock()
 			// run undo operation
