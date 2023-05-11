@@ -36,6 +36,14 @@ type Undo struct {
 	rendered bool
 }
 
+type Deps struct {
+	OpPid int // pid of remote insertor
+	OpPun int
+	OpOff int
+	Left  *Depl
+	Right *Depr
+}
+
 type Depl struct {
 	lpid    int
 	lpun    int
@@ -52,15 +60,15 @@ type Node struct {
 	pun      int
 	offset   int
 	str      string
-	dels     []Del
+	dels     []*Del
 	undo     bool // undo of insertion, nil if insertion is not undone
 	rendered bool
 	l        *Node
 	r        *Node
 	il       *Node
 	ir       *Node
-	depl     Depl
-	depr     Depr
+	depl     *Depl
+	depr     *Depr
 }
 
 type View struct {
@@ -170,127 +178,102 @@ func BroadcastUpdates() {
 
 // Moves the current position |offset| characters.
 // if offset > 0, current position moved to the right. And vice versa to the left
-// func MoveCursor(offset int) {
-// 	// Update the Curr Node and Pos of the model
-// 	// Update the position of the View
-// 	curr := crdtModel.Curr
-// 	currPos := crdtModel.Pos
-// 	if offset > 0 {
-// 		if view.pos+offset > len(view.str) {
-// 			// check if the curr will move past the end of the string in view=
-// 			view.pos = len(view.str)
-// 		}
+func MoveCursor(offset int) {
+	// Update the Curr Node and Pos of the model
+	// Update the position of the View
+	curr := crdtModel.Curr
+	currPos := crdtModel.Pos
+	if offset > 0 {
+		if view.pos+offset > len(view.str) {
+			// check if the curr will move past the end of the string in view=
+			view.pos = len(view.str)
+		}
 
-// 	} else if offset < 0 {
-// 		if view.pos+offset < len(view.str) {
-// 			// check if the curr will move past the beginning of the string in view
-// 			view.pos = 0
-// 		}
-// 	}
-// }
+	} else if offset < 0 {
+		if view.pos+offset < len(view.str) {
+			// check if the curr will move past the beginning of the string in view
+			view.pos = 0
+		}
+	}
+}
 
-// type RecurseThroughNodesReply struct {
-// 	node    Node
-// 	posNode int
-// }
+type RecurseThroughNodesReply struct {
+	node    Node
+	posNode int
+}
 
-// // TO-DO: handle invisible nodes
-// func RecurseThroughNodes(curr Node, pos int, offset int) RecurseThroughNodesReply {
-// 	currNodeLen := len(curr.str)
-// 	reply := RecurseThroughNodesReply{
-// 		node: curr,
-// 		pos:  pos,
-// 	}
-// 	if offset == 0 {
-// 		// if no more need to recurse through nodes
-// 		return reply
-// 	}
-// 	// EDIT: if the above works, substitutee with below code
-// 	if pos+offset >= 0 || pos+offset <= currNodeLen {
-// 		pos = pos + offset
-// 		RecurseThroughNodes(curr, pos, 0)
-// 	} else {
-// 		offset = offset + pos
-// 		if offset < 0 {
-// 			if curr.l == nil {
-// 				// if there are no more left nodes
-// 				RecurseThroughNodes(curr, 0, 0)
-// 			} else {
-// 				// if there are more left nodes
-// 				RecurseThroughNodes(curr.l, len(curr.l.str), offset)
-// 			}
-// 		} else {
-// 			// has to be greater than the length of the current node - pos+offset == 0 is accounted for earlier
-// 			if curr.r == nil {
-// 				// if there are no more right nodes
-// 				RecurseThroughNodes(curr, currNodeLen, 0)
-// 			} else {
-// 				RecurseThroughNodes(curr.r, 0, offset)
-// 			}
-// 		}
-// 	}
-// 	// else if offset < 0{
-// 	// 	// keep going to the left
-// 	// 	if pos + offset >= 0{
-// 	// 		// can stop at this node
-// 	// 		pos = pos + offset
-// 	// 		RecurseThroughNodes(curr, pos, 0) // can stop recursing
-// 	// 	} else {
-// 	// 		// need to continue to the next node
-// 	// 		offset = offset + pos
-// 	// 		if curr.l == nil {
-// 	// 			// if there are no more left nodes
-// 	// 			RecurseThroughNodes(curr, 0, 0)
-// 	// 		} else {
-// 	// 			// if there are more left nodes
-// 	// 			RecurseThroughNodes(curr.l, len(curr.l.str), offset)
-// 	// 		}
-// 	// 	}
-// 	// } else {
-// 	// 	// keep going to the right
-// 	// 	if pos + offset <= currNodeLen {
-// 	// 		// can stop at this node
-// 	// 		pos = pos + offset
-// 	// 		RecurseThroughNodes(curr, pos, 0) // can stop recursing
-// 	// 	} else {
-// 	// 		// need to continue to the next node
-// 	// 		offset = offset + pos
-// 	// 		if curr.r == nil {
-// 	// 			// if there are no more right nodes
-// 	// 			RecurseThroughNodes(curr, currNodeLen, 0)
-// 	// 		} else {
-// 	// 			RecurseThroughNodes(curr.r, 0, offset)
-// 	// 		}
-// 	// 	}
-// 	// }
-// }
+// TO-DO: handle invisible nodes
+func RecurseThroughNodes(curr Node, pos int, offset int) RecurseThroughNodesReply {
+	currNodeLen := len(curr.str)
+	reply := RecurseThroughNodesReply{
+		node: curr,
+		pos:  pos,
+	}
+	if offset == 0 {
+		// if no more need to recurse through nodes
+		return reply
+	}
+	// EDIT: if the above works, substitutee with below code
+	if pos+offset >= 0 || pos+offset <= currNodeLen {
+		pos = pos + offset
+		RecurseThroughNodes(curr, pos, 0)
+	} else {
+		offset = offset + pos
+		if offset < 0 {
+			if curr.l == nil {
+				// if there are no more left nodes
+				RecurseThroughNodes(curr, 0, 0)
+			} else {
+				// if there are more left nodes
+				RecurseThroughNodes(curr.l, len(curr.l.str), offset)
+			}
+		} else {
+			// has to be greater than the length of the current node - pos+offset == 0 is accounted for earlier
+			if curr.r == nil {
+				// if there are no more right nodes
+				RecurseThroughNodes(curr, currNodeLen, 0)
+			} else {
+				RecurseThroughNodes(curr.r, 0, offset)
+			}
+		}
+	}
+	// else if offset < 0{
+	// 	// keep going to the left
+	// 	if pos + offset >= 0{
+	// 		// can stop at this node
+	// 		pos = pos + offset
+	// 		RecurseThroughNodes(curr, pos, 0) // can stop recursing
+	// 	} else {
+	// 		// need to continue to the next node
+	// 		offset = offset + pos
+	// 		if curr.l == nil {
+	// 			// if there are no more left nodes
+	// 			RecurseThroughNodes(curr, 0, 0)
+	// 		} else {
+	// 			// if there are more left nodes
+	// 			RecurseThroughNodes(curr.l, len(curr.l.str), offset)
+	// 		}
+	// 	}
+	// } else {
+	// 	// keep going to the right
+	// 	if pos + offset <= currNodeLen {
+	// 		// can stop at this node
+	// 		pos = pos + offset
+	// 		RecurseThroughNodes(curr, pos, 0) // can stop recursing
+	// 	} else {
+	// 		// need to continue to the next node
+	// 		offset = offset + pos
+	// 		if curr.r == nil {
+	// 			// if there are no more right nodes
+	// 			RecurseThroughNodes(curr, currNodeLen, 0)
+	// 		} else {
+	// 			RecurseThroughNodes(curr.r, 0, offset)
+	// 		}
+	// 	}
+	// }
+}
 
 // Inserts string str at the current position and update current position to be at the right end of str.
-//
-// type Del struct {
-// 	pid      int
-// 	pun      int
-// 	l        *Node
-// 	r        *Node
-// 	undo     Undo
-// 	rendered bool
-// }
-
-//	type Node struct {
-//		pid      int
-//		pun      int
-//		offset   int
-//		str      string
-//		dels     []Del
-//		undo     Undo // undo of insertion, nil if insertion is not undone
-//		rendered bool
-//		l        *Node
-//		r        *Node
-//		il       *Node
-//		ir       *Node
-//		depl     Depl
-//		depr     Depr
-//	}
 func ArrayEqual(a, b []int) bool {
 	if len(a) != len(b) {
 		return false
@@ -303,48 +286,90 @@ func ArrayEqual(a, b []int) bool {
 	return true
 }
 
-func InsertStr(str string) {
+func InsertStr(str string, deps ...*Deps) {
+	/* 4 cases: first insert ever, left insert, right insert, or split insert (middle) */
 	var newNode = Node{
-		// pid :
-		// pun :
-		// offset :
-		// str :
-		dels: nil,
-		undo: false,
-		// l        *Node
-		// r        *Node
-		// il       *Node
-		// ir       *Node
-		// depl     Depl
-		// depr     Dep
+		pid:    myPid,
+		pun:    myPun,
+		offset: crdtModel.Pos,
+		str:    str,
+		dels:   nil,
+		undo:   false,
+		l:      nil,
+		r:      nil,
+		il:     nil,
+		ir:     nil,
+		depl:   nil,
+		depr:   nil,
 	}
-	// Get left and right nodes that are not undone/deleted
+	for _, d := range deps { // Get info from remote node if there are dependencies
+		if d.OpPid != myPid {
+			fmt.Println("PID is not mine, must be remote. Setting new pid, pun, and offset")
+			newNode.pid = d.OpPid
+			newNode.pun = d.OpPun
+			newNode.offset = d.OpOff
+			newNode.depl = d.Left
+			newNode.depr = d.Right
+			fmt.Println("New PPO set, newNode is now: ", newNode)
+		}
+	}
+	// Case 0: nothing has been inserted yet
+	if len(crdtModel.Nodes) == 0 { // First node to be inserted
+		fmt.Println("0 insert")
+		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
+		fmt.Println("Key is ", key)
+		crdtModel.Nodes[key] = newNode
+		fmt.Println("NewNode: ", newNode)
+		crdtModel.Curr = &newNode
+		view.str += str
+		outQueue.Enqueue("insert(" + str + ")")
+		return
+	}
 	curr := crdtModel.Curr
-	for curr.dels != nil {
-		curr = curr.l
-	}
-	// left = left node
-	left := curr
-	newNode.l = left // set left node to left
-	curr = crdtModel.Curr
-	for curr.dels != nil {
-		curr = curr.r
-	}
-	// right = right node
-	right := curr
-	newNode.r = right // set right node to right
+	// Case 1: Insert left
+	if crdtModel.Pos <= curr.offset {
+		fmt.Println("left insert")
+		newNode.r = curr
+		curr.l = &newNode
+		newNode.l = nil
+		fmt.Println("left, right", newNode.l, newNode.r)
 
-	if ArrayEqual([]int{left.pid, left.pun, left.offset}, []int{right.pid, right.pun, right.offset}) { // Check if they are the same insert op
-		left.ir = right // if yes, link them to each other
-		right.il = left // don't need to worry about ir and il of left because a node can't be split up other than in between two parts of it
-		// i.e. this doesn't matter if the left node is a different insert op than the right node
+		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
+		fmt.Println("Key is ", key)
+		crdtModel.Nodes[key] = newNode
+		fmt.Println("NewNode: ", newNode)
+		crdtModel.Curr = &newNode
+		view.str = str + view.str
+		outQueue.Enqueue("insert(" + str + ")")
+		fmt.Println("Outqueue is: ", outQueue)
 	}
-	// Mark the nodes we split by inserting this one
-	crdtModel.Curr.il = crdtModel.Curr.ir
-	crdtModel.Curr.ir = crdtModel.Curr.il
-	// // Not sure if this is right OR IF IT NEEDS TO GO HERE ? !? ?!?
-	view.str += str
-	outQueue.Enqueue("insert(str)")
+	// Case 2: Insert right
+	if crdtModel.Pos >= curr.offset+len(curr.str) {
+		fmt.Println("right insert")
+		curr.r = &newNode          // insert on right (FOR NOW!!!!!!!!!!!!)
+		newNode.l = crdtModel.Curr // set left node to curr,
+		// which will be to this new node's immediate left
+		newNode.r = nil // set right node to right
+		fmt.Println("left, right", newNode.l, newNode.r)
+		// if !(left == nil && right == nil) && ArrayEqual([]int{left.pid, left.pun, left.offset}, []int{right.pid, right.pun, right.offset}) { // Check if they are the same insert op
+		// 	left.ir = right // if yes, link them to each other
+		// 	right.il = left // don't need to worry about ir and il of left because a node can't be split up other than in between two parts of it
+		// 	// i.e. this doesn't matter if the left node is a different insert op than the right node
+		// }
+
+		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
+		fmt.Println("Key is ", key)
+		crdtModel.Nodes[key] = newNode
+		fmt.Println("NewNode: ", newNode)
+		crdtModel.Curr = &newNode
+		view.str += str
+		outQueue.Enqueue("insert(" + str + ")")
+		fmt.Println("Outqueue is: ", outQueue)
+	}
+	// Case 3: The new node will split the current node
+	if crdtModel.Pos > curr.offset && crdtModel.Pos < curr.offset+len(curr.str) {
+		fmt.Println("middle insert")
+	}
 }
 
 // Deletes len characters right to the current position.
@@ -461,6 +486,7 @@ func main() {
 	}
 	myPid = myID
 	myPun = 0
+	crdtModel.Nodes = make(map[string]Node)
 	wg.Add(1)
 	fmt.Println("myPid", myPid)
 	fmt.Println("myPun", myPun)
@@ -494,6 +520,7 @@ func main() {
 	// listen for terminal input
 	for {
 		fmt.Print("-> ")
+		fmt.Println("My PUN is now: ", myPun)
 		text, _ := reader.ReadString('\n')
 		// convert CRLF to LF
 		text = strings.Replace(text, "\n", "", -1)
@@ -506,17 +533,28 @@ func main() {
 			fmt.Println("insert")
 			str := text[7 : len(text)-1]
 			fmt.Println("str", str)
+			m.Lock()
 			InsertStr(str)
+			myPun += 1
+			m.Unlock()
 			// run insert operation
 		}
 		match, _ = regexp.MatchString(deleteR, text)
 		if match {
 			fmt.Println("delete")
+			m.Lock()
+			// DeleteStr(str)
+			myPun += 1
+			m.Unlock()
 			// run delete operation
 		}
 		match, _ = regexp.MatchString(undoR, text)
 		if match {
 			fmt.Println("undo")
+			m.Lock()
+			// UndoOperation(str)
+			myPun += 1
+			m.Unlock()
 			// run undo operation
 		}
 		fmt.Println(view.str) // print out the up to date string
