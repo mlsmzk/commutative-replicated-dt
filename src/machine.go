@@ -467,10 +467,7 @@ func checkOddUndo(undo *Undo) bool {
 	for ; undo != nil; undo = undo.undo {
 		numUndo++
 	}
-	if numUndo%2 == 1 {
-		return true
-	}
-	return false
+	return numUndo%2 == 1
 }
 
 func isNodeVisible(node *Node) bool {
@@ -636,10 +633,6 @@ func Render() {
 // Dequeues operations in the local and remote Queues, and sends broadcast using the outQueue upon new local operations
 func DequeueOperations() {
 	for {
-		insertR := "insert\\(.+\\)"
-		deleteR := "delete\\([0-9]+\\)"
-		undoR := "undo"
-		moveR := "move\\([0-9]+\\)"
 
 		if remoteQueue.IsEmpty() && localQueue.IsEmpty() {
 			continue
@@ -648,8 +641,8 @@ func DequeueOperations() {
 			fmt.Println("Dequeuing from local queue")
 			localQueueOp := localQueue.Dequeue()
 			fmt.Println("LocalQueueOp", localQueueOp)
-			match, _ := regexp.MatchString(insertR, localQueueOp)
-			if match {
+			switch operation := (checkWhichOp(localQueueOp)); operation {
+			case Insert:
 				fmt.Println("insert")
 				str := localQueueOp[7 : len(localQueueOp)-1]
 				// fmt.Println("str", str)
@@ -658,25 +651,13 @@ func DequeueOperations() {
 				fmt.Println("Finished inserting string")
 				fmt.Println("View is now: ", view.str)
 				// run insert operation
-			}
-			match, _ = regexp.MatchString(deleteR, localQueueOp)
-			if match {
+			case Delete:
 				fmt.Println("delete")
 				m.Lock()
 				// DeleteStr(str)
 				m.Unlock()
 				// run delete operation
-			}
-			match, _ = regexp.MatchString(undoR, localQueueOp)
-			if match {
-				fmt.Println("undo")
-				m.Lock()
-				// UndoOperation(str)
-				m.Unlock()
-				// run undo operation
-			}
-			match, _ = regexp.MatchString(moveR, localQueueOp)
-			if match {
+			case Move:
 				fmt.Println("move")
 				str := localQueueOp[5 : len(localQueueOp)-1]
 				offset, _ := strconv.Atoi(str)
@@ -684,6 +665,14 @@ func DequeueOperations() {
 				MoveCursor(offset)
 				fmt.Println("moved cursor")
 				// m.Unlock()
+			case UndoOp:
+				fmt.Println("undo")
+				m.Lock()
+				// UndoOperation(str)
+				m.Unlock()
+				// run undo operation
+			default:
+				continue
 			}
 			m.Lock()
 			outQueue.Enqueue(localQueueOp)
@@ -821,12 +810,6 @@ func main() {
 	fmt.Println("To undo your previous command, type the following: undo")
 	fmt.Println("")
 
-	// // regex declaration
-	// insertR := "insert\\(.+\\)"
-	// deleteR := "delete\\([0-9]+\\)"
-	// undoR := "undo"
-	// moveR := "move\\([0-9]+\\)"
-
 	// run a thread to always be listening to dequeue operations
 	go DequeueOperations()
 
@@ -857,43 +840,6 @@ func main() {
 			default:
 				continue
 			}
-			// match, _ := regexp.MatchString(insertR, text)
-			// if match {
-			// 	// fmt.Println("insert")
-			// 	// str := text[7 : len(text)-1]
-			// 	// fmt.Println("str", str)
-			// 	// m.Lock()
-			// length, _ := strconv.Atoi(text[7 : len(text)-1])
-			// InsertStr(length)
-			// 	// myPun += 1
-			// 	// m.Unlock()
-			// 	// run insert operation
-			// 	fmt.Println("text", text)
-			// 	localQueue.Enqueue(text)
-			// }
-			// match, _ = regexp.MatchString(deleteR, text)
-			// if match {
-			// 	// fmt.Println("delete")
-			// 	// DeleteStr(str)
-			// 	// run delete operation
-			// }
-			// match, _ = regexp.MatchString(undoR, text)
-			// if match {
-			// 	// fmt.Println("undo")
-			// 	// UndoOperation(str)
-			// 	// run undo operation
-			// }
-			// match, _ = regexp.MatchString(moveR, text)
-			// if match {
-			// 	// fmt.Println("move")
-			// 	// str := text[5 : len(text)-1]
-			// 	// offset, _ := strconv.Atoi(str)
-			// 	// // m.Lock()
-			// 	// MoveCursor(offset)
-			// 	// fmt.Println("moved cursor")
-			// 	// // m.Unlock()
-			// 	localQueue.Enqueue(text)
-			// }
 			fmt.Println(view.str) // print out the up to date string
 		}
 	}()
