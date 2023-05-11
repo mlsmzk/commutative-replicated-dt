@@ -65,6 +65,7 @@ type Node struct {
 
 type View struct {
 	str string // character string visible to the user
+	pos int // current position between two characters
 }
 
 type Model struct {
@@ -95,6 +96,7 @@ const (
 	Insert = iota
 	Delete
 	UndoOp
+	Move
 )
 
 // ToDo: Import Queue
@@ -162,6 +164,11 @@ func BroadcastUpdates() {
 	}
 }
 
+// Moves the current position |offset| characters.
+// if offset > 0, current position moved to the right. And vice versa to the left
+func MoveCursor(offset int) {
+}
+
 // Inserts string str at the current position and update current position to be at the right end of str.
 func InsertStr(str string, offset int) {
 	var newNode = Node{
@@ -206,6 +213,7 @@ func DeleteStr(len int) {
 
 // Undoes op, which can be insert, delete or undo, and the new current position is placed at op.
 func UndoOperation(op int) {
+	// 
 }
 
 // Dequeues operations in the local and remote Queues, and sends broadcast using the outQueue upon new local operations
@@ -319,11 +327,15 @@ func main() {
 	// Introduction to how to use the terminal
 	fmt.Println("Welcome to the Group Editing Terminal:")
 	fmt.Println("------------------------------------------")
-	fmt.Println("To write a new text, type the following command where {n} is the index")
-	fmt.Println("for your insertion, and {a} is the word you want to insert: insert({n}, {a})")
+	fmt.Println("To move your cusor, type the following command where {n} is how many characters you want")
+	fmt.Println("to move your cusor by (e.g. n=2 moves the cursor to the right by 2, n=-2 moves the cursor")
+	fmt.Println("to the left by 2): move({n})")
 	fmt.Println("")
-	fmt.Println("To delete something, type the following command where {n} is the index")
-	fmt.Println("of the start of your deletion, and {k} is the number of characters you want to delete: delete({n}, {k})")
+	fmt.Println("To write a new text, type the following command for your insertion where {a} is the word")
+	fmt.Println("you want to insert at the current position: insert({n}, {a})")
+	fmt.Println("")
+	fmt.Println("To delete something, type the following command where {k} is the number of characters")
+	fmt.Println("you want to delete to the right of the current position: delete({k})")
 	fmt.Println("")
 	fmt.Println("To undo your previous command, type the following: undo")
 
