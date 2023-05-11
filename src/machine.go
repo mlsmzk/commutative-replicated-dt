@@ -18,12 +18,11 @@ type OperationMapID struct {
 	opIdx int
 }
 
-var pun2op map[int] OperationMapID
+var pun2op map[int]OperationMapID
 
-var insertMap 	map[int] *Node
-var deleteMap 	map[int] *Del
-var undoMap		map[int] *Undo
-
+var insertMap map[int]*Node
+var deleteMap map[int]*Del
+var undoMap map[int]*Undo
 
 type Machine int
 
@@ -89,7 +88,7 @@ type View struct {
 }
 
 type Model struct {
-	Nodes map[string]Node
+	Nodes map[string]*Node
 	Curr  *Node
 	Pos   int
 }
@@ -183,6 +182,8 @@ func BroadcastUpdates() {
 		// fmt.Println("Sending op out to peers")
 		go func(peer ServerConnection) {
 			args := ReceiveUpdatesArgument{
+				//pid: myPid,
+				//pun: myPun,
 				NewOperations: newOps,
 			}
 			var reply ReceiveUpdatesReply
@@ -210,30 +211,77 @@ func MoveCursor(offset int) {
 	if offset == 0 {
 		return
 	}
-	curr := crdtModel.Curr
+	currNode := crdtModel.Curr
 	currPos := crdtModel.Pos
-	if offset > 0 {
-		if view.pos+offset > len(view.str) {
-			// check if the curr will move past the end of the string in view=
-			view.pos = len(view.str)
-		} else {
-			view.pos = view.pos + offset
-		}
 
+	if currNode == nil {
+		return
+	}
+
+	//trivial case
+	if offset >= 0 && (len(currNode.str)-currPos >= offset) {
+		crdtModel.Pos += offset
+		return
+	}
+	if offset < 0 && (currPos >= -offset) {
+		crdtModel.Pos += offset
+		return
+	}
+
+	if offset > 0 {
+		offset -= len(currNode.str) - currPos
+		for node := currNode.r; node != nil; node = node.r {
+			if isNodeVisible(node) {
+				if len(node.str) >= offset {
+					// could be error here
+					crdtModel.Pos = offset
+					crdtModel.Curr = node
+					return
+				} else {
+					offset -= len(node.str)
+				}
+			}
+		}
 	} else {
-		if view.pos+offset < len(view.str) {
-			// check if the curr will move past the beginning of the string in view
-			view.pos = 0
-		} else {
-			view.pos = view.pos + offset
+		offset += currPos
+		for node := currNode.l; node != nil; node = node.l {
+			if isNodeVisible(node) {
+				if len(node.str) >= -offset {
+					// could be error here
+					crdtModel.Pos = len(node.str) + offset
+					crdtModel.Curr = node
+					return
+				} else {
+					offset += len(node.str)
+				}
+			}
 		}
 	}
-	fmt.Println("new post in view:", view.pos)
-	reply := RecurseThroughNodes(curr, currPos, offset, 0)
-	crdtModel.Curr = reply.node
-	crdtModel.Pos = reply.posNode
-	fmt.Println("hi im here :", reply.node)
-	fmt.Println("at this position:", reply.posNode)
+
+	/*
+		if offset > 0 {
+			if view.pos+offset > len(view.str) {
+				// check if the curr will move past the end of the string in view=
+				view.pos = len(view.str)
+			} else {
+				view.pos = view.pos + offset
+			}
+
+		} else {
+			if view.pos+offset < len(view.str) {
+				// check if the curr will move past the beginning of the string in view
+				view.pos = 0
+			} else {
+				view.pos = view.pos + offset
+			}
+		}
+		fmt.Println("new post in view:", view.pos)
+		reply := RecurseThroughNodes(curr, currPos, offset, 0)
+		crdtModel.Curr = reply.node
+		crdtModel.Pos = reply.posNode
+		fmt.Println("hi im here :", reply.node)
+		fmt.Println("at this position:", reply.posNode)
+	*/
 }
 
 func RecurseThroughNodes(curr *Node, pos int, offset int, numInvs int) RecurseThroughNodesReply {
@@ -339,11 +387,11 @@ func InsertStr(str string, deps ...*Deps) {
 	var newNode = Node{
 		pid:      myPid,
 		pun:      myPun,
-		offset:   crdtModel.Pos,
+		offset:   0,
 		str:      str,
 		dels:     nil,
 		undo:     nil,
-		rendered: true,
+		rendered: false,
 		l:        nil,
 		r:        nil,
 		il:       nil,
@@ -362,88 +410,73 @@ func InsertStr(str string, deps ...*Deps) {
 			fmt.Println("New PPO set, newNode is now: ", newNode)
 		}
 	}
+	curr := crdtModel.Curr
 	// Case 0: nothing has been inserted yet
 	if len(crdtModel.Nodes) == 0 { // First node to be inserted
 		fmt.Println("0 insert")
 		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
 		fmt.Println("Key is ", key)
-		crdtModel.Nodes[key] = newNode
+		crdtModel.Nodes[key] = &newNode
 		fmt.Println("NewNode: ", newNode)
 		crdtModel.Curr = &newNode
-		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
-		view.str += str
-		return
-	}
-	curr := crdtModel.Curr
-	// Case 1: Insert left
-	if crdtModel.Pos <= curr.offset {
+		crdtModel.Pos = len(str) // For functionality with move; move back to move forward the right number of spaces
+	} else if crdtModel.Pos == 0 {
+		// Case 1: Insert left
 		fmt.Println("left insert")
 		newNode.r = curr
+		newNode.l = curr.l
+		if curr.l != nil {
+			curr.l.r = &newNode
+		}
 		curr.l = &newNode
-		newNode.l = nil
-		fmt.Println("left, right", newNode.l, newNode.r)
-
 		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
-		fmt.Println("Key is ", key)
-		crdtModel.Nodes[key] = newNode
-		fmt.Println("NewNode: ", newNode)
+		crdtModel.Nodes[key] = &newNode
 		crdtModel.Curr = &newNode
-		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
-		view.str = str + view.str
-		fmt.Println("Outqueue is: ", outQueue)
-	}
-	// Case 2: Insert right
-	if crdtModel.Pos >= curr.offset+len(curr.str) {
+		crdtModel.Pos = len(str)
+	} else if crdtModel.Pos == len(crdtModel.Curr.str) {
+		// Case 2: Insert right
 		fmt.Println("right insert")
-		curr.r = &newNode          // insert on right (FOR NOW!!!!!!!!!!!!)
 		newNode.l = crdtModel.Curr // set left node to curr,
 		// which will be to this new node's immediate left
 		newNode.r = nil // set right node to right
-		fmt.Println("left, right", newNode.l, newNode.r)
-		// if !(left == nil && right == nil) && ArrayEqual([]int{left.pid, left.pun, left.offset}, []int{right.pid, right.pun, right.offset}) { // Check if they are the same insert op
-		// 	left.ir = right // if yes, link them to each other
-		// 	right.il = left // don't need to worry about ir and il of left because a node can't be split up other than in between two parts of it
-		// 	// i.e. this doesn't matter if the left node is a different insert op than the right node
-		// }
-
+		if curr.r != nil {
+			curr.r.l = &newNode
+		}
+		curr.r = &newNode // insert on right (FOR NOW!!!!!!!!!!!!)
 		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
-		fmt.Println("Key is ", key)
-		crdtModel.Nodes[key] = newNode
-		fmt.Println("NewNode: ", newNode)
+		crdtModel.Nodes[key] = &newNode
 		crdtModel.Curr = &newNode
-		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
-		view.str += str
-		fmt.Println("Outqueue is: ", outQueue)
-	}
-	// Case 3: The new node will split the current node
-	if crdtModel.Pos > curr.offset && crdtModel.Pos < curr.offset+len(curr.str) {
+		crdtModel.Pos = len(str) // For functionality with move; move back to move forward the right number of spaces
+	} else {
+		// Case 3: The new node will split the current node
 		fmt.Println("middle insert")
 		splitStr := curr.str
-		leftStr := splitStr[0 : crdtModel.Pos-curr.offset]
+		leftStr := splitStr[0:crdtModel.Pos]
 		leftNode := curr
 		leftNode.str = leftStr
-		rightStr := splitStr[crdtModel.Pos-curr.offset:]
-		rightNode := curr
+		rightStr := splitStr[crdtModel.Pos:]
+		rightNode := *curr // Note : this is dereferenced object
 		rightNode.str = rightStr
+		rightNode.offset = leftNode.offset + len(leftStr)
 		leftNode.r = &newNode   // newNode is now to the immediate right of leftNode
 		rightNode.l = &newNode  // newNode is now to the immediate left of rightNode
 		rightNode.il = leftNode // rightNode and leftNode were inserted at the same time, so they have the same ir il
-		leftNode.ir = rightNode
+		leftNode.ir = &rightNode
+
+		newNode.l = leftNode
+		newNode.r = &rightNode
 
 		fmt.Println("left, right", newNode.l, newNode.r)
 		key := strconv.Itoa(newNode.pid) + "," + strconv.Itoa(newNode.pun) + "," + strconv.Itoa(newNode.offset)
 		fmt.Println("Key is ", key)
-		crdtModel.Nodes[key] = newNode
+		crdtModel.Nodes[key] = &newNode
 		fmt.Println("NewNode: ", newNode)
-
-		// Update view
-		leftBound := crdtModel.Pos
-		// rightBound := crdtModel.Pos + len(newNode.str)
-		view.str = view.str[0:leftBound] + newNode.str + view.str[leftBound:len(view.str)]
-		fmt.Println("Outqueue is: ", outQueue)
+		//rightNode added to Model
+		key = strconv.Itoa(rightNode.pid) + "," + strconv.Itoa(rightNode.pun) + "," + strconv.Itoa(rightNode.offset)
+		crdtModel.Nodes[key] = &rightNode
 
 		crdtModel.Curr = &newNode
-		crdtModel.Pos = 0 // For functionality with move; move back to move forward the right number of spaces
+		crdtModel.Pos = len(str) // For functionality with move; move back to move forward the right number of spaces
 	}
 }
 
@@ -580,31 +613,31 @@ func DeleteStr(length int) {
 		crdtModel.Curr = currNode.r
 		crdtModel.Pos = 0
 	}
-	Render()
 }
 
 // Undoes op, which can be insert, delete or undo, and the new current position is placed at op.
-func UndoOperation(pun int) {
-	newUndo := Undo{
-		pid: myPid,
-		pun: myPun,
-	}
-	opMapID := pun2op(pun)
-	switch opMapID.opNum {
-	case 0:
-		insertMap[opMapID.opIdx]
-	case 1:
-	case 2:	
+func UndoOperation(pid int, pun int) {
+	/*
+		newUndo := Undo{
+			pid: myPid,
+			pun: myPun,
+		}
+		opMapID := pun2op(pun)
+		switch opMapID.opNum {
+		case 0:
+			insertMap[opMapID.opIdx]
+		case 1:
+		case 2:
 
-	}
-	
-	
+		}
 
-	var insertMap 	map[int] *Node
-	var deleteMap 	map[int] *Del
-	var undoMap		map[int] *Undo
-	Model.Nodes[]
-	Render()
+
+
+		var insertMap 	map[int] *Node
+		var deleteMap 	map[int] *Del
+		var undoMap		map[int] *Undo
+		Model.Nodes[]
+	*/
 	fmt.Println("undo finisheed")
 }
 
@@ -639,7 +672,6 @@ func Render() {
 // Dequeues operations in the local and remote Queues, and sends broadcast using the outQueue upon new local operations
 func DequeueOperations() {
 	for {
-
 		if remoteQueue.IsEmpty() && localQueue.IsEmpty() {
 			continue
 		}
@@ -681,7 +713,7 @@ func DequeueOperations() {
 				case UndoOp:
 					fmt.Println("undo")
 					m.Lock()
-					UndoOperation()
+					UndoOperation(0, 0)
 					m.Unlock()
 					// run undo operation
 				default:
@@ -731,7 +763,7 @@ func DequeueOperations() {
 				case UndoOp:
 					fmt.Println("undo")
 					m.Lock()
-					UndoOperation() // input does not matter
+					UndoOperation(0, 0) // input does not matter
 					m.Unlock()
 					// run undo operation
 				default:
@@ -741,6 +773,7 @@ func DequeueOperations() {
 		}
 		// broadcast the new operations done locally
 		// wg.Add(1)
+		Render()
 		go BroadcastUpdates()
 		// Go through array and try going through operations
 	}
@@ -847,7 +880,7 @@ func main() {
 	}
 	myPid = myID
 	myPun = 0
-	crdtModel.Nodes = make(map[string]Node)
+	crdtModel.Nodes = make(map[string]*Node)
 	wg.Add(2)
 	fmt.Println("myPid", myPid)
 	fmt.Println("myPun", myPun)
