@@ -103,6 +103,9 @@ var localQueue Queue
 var remoteQueue Queue
 var outQueue Queue
 
+var myPid int
+var myPun int
+
 var id int
 var crdtModel Model
 var view View
@@ -194,20 +197,32 @@ func MoveCursor(offset int) {
 //		depl     Depl
 //		depr     Depr
 //	}
+func ArrayEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func InsertStr(str string) {
 	var newNode = Node{
-		pid :
-		pun :
-		offset :
-		str :
-		dels :
-		undo: false
-		l        *Node
-		r        *Node
-		il       *Node
-		ir       *Node
-		depl     Depl
-		depr     Dep
+		// pid :
+		// pun :
+		// offset :
+		// str :
+		// dels :
+		undo: false,
+		// l        *Node
+		// r        *Node
+		// il       *Node
+		// ir       *Node
+		// depl     Depl
+		// depr     Dep
 	}
 	// Get left and right nodes that are not undone/deleted
 	curr := crdtModel.Curr
@@ -224,8 +239,8 @@ func InsertStr(str string) {
 	// right = right node
 	right := curr
 	newNode.r = right // set right node to right
-	
-	if []int{left.pid, left.pun, left.offset} == []int{right.pid, right.pun, right.offset} { // Check if they are the same insert op
+
+	if ArrayEqual([]int{left.pid, left.pun, left.offset}, []int{right.pid, right.pun, right.offset}) { // Check if they are the same insert op
 		left.ir = right // if yes, link them to each other
 		right.il = left // don't need to worry about ir and il of left because a node can't be split up other than in between two parts of it
 		// i.e. this doesn't matter if the left node is a different insert op than the right node
@@ -350,9 +365,11 @@ func main() {
 		// Record that in log
 		fmt.Println("Connected to " + element)
 	}
-
+	myPid = myID
+	myPun = 0
 	wg.Add(1)
-
+	fmt.Println("myPid", myPid)
+	fmt.Println("myPun", myPun)
 	// read console input
 	reader := bufio.NewReader(os.Stdin)
 	// Introduction to how to use the terminal
