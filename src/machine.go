@@ -69,7 +69,7 @@ type View struct {
 
 type Model struct {
 	Nodes map[string]Node
-	Curr  Node
+	Curr  *Node
 	Pos   int
 }
 
@@ -97,7 +97,6 @@ const (
 	UndoOp
 )
 
-// ToDo: Import Queue
 var localQueue Queue
 var remoteQueue Queue
 var outQueue Queue
@@ -163,42 +162,47 @@ func BroadcastUpdates() {
 }
 
 // Inserts string str at the current position and update current position to be at the right end of str.
-func InsertStr(str string, offset int) {
-	var newNode = Node{
-		// pid :
-		// pun :
-		// offset :
-		// str :
-		// dels :
-		undo : nil // undo of insertion, nil if insertion is not undone
-		rendered : false
-		// l        *Node
-		// r        *Node
-		// il       *Node
-		// ir       *Node
-		// depl     Depl
-		// depr     Dep
-	}
-	// Get left and right nodes that are not undone/deleted
-	curr := Model.Curr
-	for curr.undo == nil {
-		curr = curr.l
-	}
-	// left = left node
-	left = curr
-	curr = Model.Curr
-	for curr.undo == nil {
-		curr = curr.right
-	}
-	// right = right node
-	right = curr
+// func InsertStr(str string) {
+// 	var newNode = Node{
+// 		// pid :
+// 		// pun :
+// 		// offset :
+// 		// str :
+// 		// dels :
+// 		undo: Undo{
+// 			pid: 0, // Will change based on server
+// 			pun: 0, // Will change based on number of updates issued
+// 			// undo     *Undo
+// 			rendered: false,
+// 		}, // undo of insertion, nil if insertion is not undone
+// 		rendered: false,
+// 		// l        *Node
+// 		// r        *Node
+// 		// il       *Node
+// 		// ir       *Node
+// 		// depl     Depl
+// 		// depr     Dep
+// 	}
+// 	// Get left and right nodes that are not undone/deleted
+// 	curr := Model.Curr
+// 	for curr.undo == nil {
+// 		curr = curr.l
+// 	}
+// 	// left = left node
+// 	left := curr
+// 	curr = Model.Curr
+// 	for curr.undo == nil {
+// 		curr = curr.right
+// 	}
+// 	// right = right node
+// 	right := curr
 
-	// Mark the nodes we split by inserting this one
-	Model.Curr.il = Model.Curr.ir
-	Model.Curr.ir = Model.Curr.il
-	// Not sure if this is right OR IF IT NEEDS TO GO HERE ? !? ?!?
+// 	// Mark the nodes we split by inserting this one
+// 	Model.Curr.il = Model.Curr.ir
+// 	Model.Curr.ir = Model.Curr.il
+// 	// Not sure if this is right OR IF IT NEEDS TO GO HERE ? !? ?!?
 
-}
+// }
 
 // Deletes len characters right to the current position.
 func DeleteStr(len int) {
@@ -328,7 +332,7 @@ func main() {
 	fmt.Println("To undo your previous command, type the following: undo")
 
 	// regex declaration
-	insertR := "insert\\([0-9]+,.+\\)"
+	insertR := "insert\\(.+\\)"
 	deleteR := "delete\\([0-9]+,[0-9]+\\)"
 	undoR := "undo"
 
