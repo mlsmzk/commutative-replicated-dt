@@ -163,34 +163,43 @@ func BroadcastUpdates() {
 	}
 }
 
+type RecurseThroughNodesReply struct {
+	node Node
+	posNode int
+}
+
 // Moves the current position |offset| characters.
 // if offset > 0, current position moved to the right. And vice versa to the left
 func MoveCursor(offset int) {
 	// Update the Curr Node and Pos of the model
 	// Update the position of the View
+	if offset == 0 {
+		return
+	}
 	curr := crdtModel.Curr
 	currPos := crdtModel.Pos
 	if offset > 0 {
 		if view.pos + offset > len(view.str){
 			// check if the curr will move past the end of the string in view=
 			view.pos = len(view.str)
+		} else {
+			view.pos = view.pos + offset
 		}
 		
-	} else if offset < 0 {
+	} else {
 		if view.pos + offset < len(view.str){
 			// check if the curr will move past the beginning of the string in view
 			view.pos = 0
+		} else {
+			view.pos = view.pos + offset
 		}
 	}
+	reply := RecurseThroughNodes(curr, currPos, offset, 0)
+	crdtModel.Curr = &reply.node
+	crdtModel.Pos = reply.posNode
 }
 
-type RecurseThroughNodesReply struct {
-	node Node
-	posNode int
-}
-
-// TO-DO: handle invisible nodes
-func RecurseThroughNodes(curr Node, pos int, offset int) RecurseThroughNodesReply {
+func RecurseThroughNodes(curr Node, pos int, offset int, numInvs int) RecurseThroughNodesReply {
 	currNodeLen := len(curr.str)
 	reply := RecurseThroughNodesReply{
 		node: curr,
@@ -199,8 +208,37 @@ func RecurseThroughNodes(curr Node, pos int, offset int) RecurseThroughNodesRepl
 	if offset == 0{
 		// if no more need to recurse through nodes
 		return reply
-	} 
-	// EDIT: if the above works, substitutee with below code
+	}
+	if !curr.rendered{
+		// if the node isn't being rendered
+		if offset < 0 {
+			// wants to move to the left
+			if curr.l == nil {
+				// if there are no more left nodes, go to the previous non-invisible node
+				var finalNode Node
+				for numInvs > 0{
+					finalNode = *curr.r
+					numInvs = numInvs - 1
+				}
+				RecurseThroughNodes(finalNode, 0, 0, 0)
+			} else {
+				RecurseThroughNodes(curr.l, len(curr.l.str), offset, numInvs + 1)
+			}
+		} else {
+			// wants to move to the right
+			if curr.r == nil {
+				// if there are no more right nodes, go to the previous non-invisible node
+				var finalNode Node
+				for numInvs > 0{
+					finalNode = *curr.l
+					numInvs = numInvs - 1
+				}
+				RecurseThroughNodes(finalNode, len(finalNode.str), 0, 0)
+			} else {
+				RecurseThroughNodes(curr.r, len(curr.l.str), offset, numInvs + 1)
+			}
+		}
+	}
 	if pos + offset >= 0 || pos + offset <= currNodeLen {
 		pos = pos + offset
 		RecurseThroughNodes(curr,pos,0)
@@ -212,15 +250,15 @@ func RecurseThroughNodes(curr Node, pos int, offset int) RecurseThroughNodesRepl
 				RecurseThroughNodes(curr, 0, 0)
 			} else {
 				// if there are more left nodes
-				RecurseThroughNodes(curr.l, len(curr.l.str), offset)
+				RecurseThroughNodes(curr.l, len(curr.l.str), offset, numInvs)
 			}
 		} else {
 			// has to be greater than the length of the current node - pos+offset == 0 is accounted for earlier
 			if curr.r == nil {
 				// if there are no more right nodes
-				RecurseThroughNodes(curr, currNodeLen, 0)
+				RecurseThroughNodes(curr, currNodeLen, 0, numInvs)
 			} else {
-				RecurseThroughNodes(curr.r, 0, offset)
+				RecurseThroughNodes(curr.r, 0, offset, numInvs)
 			}
 		}
 	}
